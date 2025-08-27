@@ -1,0 +1,52 @@
+.program audioPassThrough
+
+.pio_version 0
+
+.side_set 1
+
+; Pin assignments:
+; - BCLK is side-set pin 0
+; - WS is OUT pin 0
+; - DATA is IN pin 0
+
+.wrap_target
+                  ;|\ BCLK
+mov y,    !y  side 0
+mov osr,  y   side 1
+set x,    29  side 0
+out pins, 1   side 1 ; This needs to be here to conclude 32 full clock cyles(2 from this block and 30 from the loop)
+bitloop:
+in pins,1        side 0
+jmp x--, bitloop side 1
+.wrap
+
+% c-sdk {
+static inline void audioPassThrough_program_init(PIO pio, uint sm, uint offset, uint pinBCLK, uint pinWS, uint pinData){
+  pio_gpio_init(pio, pinBCLK);
+  pio_gpio_init(pio, pinWS);
+  pio_gpio_init(pio, pinData);
+
+  pio_sm_set_consecutive_pindirs(pio, sm, pinBCLK, 1, true);
+  pio_sm_set_consecutive_pindirs(pio, sm, pinWS, 1, true);
+  pio_sm_set_consecutive_pindirs(pio, sm, pinData, 1, false);
+
+  pio_sm_config c = audioPassThrough_program_get_default_config(offset);
+  sm_config_set_out_pins(&c, pinWS, 1);
+  sm_config_set_out_shift(&c, true, false, 0); // no autopull threshold = don't care
+  sm_config_set_in_pins(&c, pinData);
+  // we read in 30 data bytes so autopush is enabled at 30
+  // Why read 30 bytes when the microphone outputs 18 bits of data and has 24 bit precision?
+  // Because it needs 64 bit clock cycles in order ro start transmitting again, which we provide 
+  // with the program above
+  sm_config_set_in_shift(&c, false, false, 30);
+  sm_config_set_sideset_pins(&c, pinBCLK);
+
+  // To sample the mic at 48Khz with 150Mhz system clock we need a 3.072Mhz BLCK according to the datasheet.
+  // Remember that each BLCK cycle is 2 clock cycles
+  // 150Mhz/(2*3.072Mhz) = 24.414063 --> 24 integer and 106 fractional part
+  sm_config_set_clkdiv_int_frac(&c, 24, 106);
+
+  pio_sm_init(pio, sm, offset, &c);
+  pio_sm_set_enabled(pio, sm, true);
+}
+%}
