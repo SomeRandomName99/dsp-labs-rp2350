@@ -11,14 +11,17 @@
 
 #define LED_DELAY_MS 500
 
+void toggleLED(void);
+
 int main() {
+  /* Init functions */
   stdio_uart_init();
   cyw43_arch_init();
   board_init();
   tusb_init();
-
   audio_usb_init();
 
+  /* PIO setup */
   PIO pio;
   uint sm;
   uint offset;
@@ -35,10 +38,22 @@ int main() {
   printf("SM%d Clock Divisor: %lu.%lu\n", sm, clkdiv_int, clkdiv_frac);
 
   while(1){
-    // cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, true);
-    // sleep_ms(LED_DELAY_MS);
-    // cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, false);
-    // sleep_ms(LED_DELAY_MS);
     tud_task();
+    toggleLED();
+  }
+}
+
+/* Local function implementation */
+void toggleLED(void){
+  static bool isOn = false;
+
+  static uint32_t toggleTime = 0;
+  uint32_t curTime =  board_millis();
+  bool toggle = (curTime - toggleTime) >= 500;
+
+  if(toggle){
+    isOn = !isOn;
+    cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, isOn);
+    toggleTime = curTime;
   }
 }
