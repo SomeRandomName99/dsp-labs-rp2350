@@ -35,7 +35,10 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(audioPassThrough audioPassThrough.c )
+add_executable(audioPassThrough 
+        main.c
+        usb_descriptors.c
+        audio_usb.c )
 
 pico_set_program_name(audioPassThrough "audioPassThrough")
 pico_set_program_version(audioPassThrough "0.1")
@@ -44,8 +47,7 @@ pico_set_program_version(audioPassThrough "0.1")
 pico_generate_pio_header(audioPassThrough ${CMAKE_CURRENT_LIST_DIR}/audioPassThrough.pio)
 
 # Add the standard library to the build
-target_link_libraries(audioPassThrough
-        pico_stdlib)
+target_link_libraries(audioPassThrough pico_stdlib)
 
 # Add the standard include files to the build
 target_include_directories(audioPassThrough PRIVATE
@@ -57,7 +59,9 @@ target_link_libraries(audioPassThrough
         hardware_dma
         hardware_pio
         pico_cyw43_arch_none
-        )
+        tinyusb_device
+        tinyusb_board
+    )
 
 pico_enable_stdio_uart(audioPassThrough 1)
 pico_enable_stdio_usb(audioPassThrough 0)

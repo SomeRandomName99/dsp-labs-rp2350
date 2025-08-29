@@ -3,6 +3,7 @@
 #include "pico/cyw43_arch.h"
 #include "pico/stdlib.h"
 #include "stdio.h"
+#include "audio_usb.h"
 
 #define BCLK_PIN 2
 #define WS_PIN   3
@@ -11,8 +12,12 @@
 #define LED_DELAY_MS 500
 
 int main() {
-  stdio_init_all();
+  stdio_uart_init();
   cyw43_arch_init();
+  board_init();
+  tusb_init();
+
+  audio_usb_init();
 
   PIO pio;
   uint sm;
@@ -30,12 +35,10 @@ int main() {
   printf("SM%d Clock Divisor: %lu.%lu\n", sm, clkdiv_int, clkdiv_frac);
 
   while(1){
-    if(pio_sm_is_exec_stalled(pio, sm)){
-      printf("Pio is stalled");
-    }
-    cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, true);
-    sleep_ms(LED_DELAY_MS);
-    cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, false);
-    sleep_ms(LED_DELAY_MS);
+    // cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, true);
+    // sleep_ms(LED_DELAY_MS);
+    // cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, false);
+    // sleep_ms(LED_DELAY_MS);
+    tud_task();
   }
 }

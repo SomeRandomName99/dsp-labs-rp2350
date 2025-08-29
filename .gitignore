@@ -1,0 +1,5 @@
+tinyusb/*
+RpiPicoTestProjects/*
+**/*/.cache/*
+**/*/build/*
+**/*/.vscode/*
