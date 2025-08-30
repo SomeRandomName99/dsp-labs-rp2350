@@ -11,7 +11,11 @@
 
 #define LED_DELAY_MS 500
 
-void toggleLED(void);
+#define DBG_LOOP_PIN 14
+#define DBG_AUDIO_PIN 15
+
+void toggleLED();
+void debugGPIO_init();
 
 int main() {
   /* Init functions */
@@ -20,6 +24,7 @@ int main() {
   board_init();
   tusb_init();
   audio_usb_init();
+  debugGPIO_init();
 
   /* PIO setup */
   PIO pio;
@@ -39,6 +44,7 @@ int main() {
 
   while(1){
     tud_task();
+    audio_task();
     toggleLED();
   }
 }
@@ -56,4 +62,12 @@ void toggleLED(void){
     cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, isOn);
     toggleTime = curTime;
   }
+}
+
+void debugGPIO_init(){
+  gpio_init(DBG_LOOP_PIN);
+  gpio_init(DBG_AUDIO_PIN);
+
+  gpio_set_dir(DBG_LOOP_PIN, GPIO_OUT);
+  gpio_set_dir(DBG_AUDIO_PIN, GPIO_OUT);
 }

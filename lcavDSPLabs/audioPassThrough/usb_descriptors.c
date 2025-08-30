@@ -129,10 +129,10 @@ enum {
 char const* string_desc_arr [] =
 {
     (const char[]) { 0x09, 0x04 }, // 0: is supported language is English (0x0409)
-    "Malkawi Tech",                   // 1: Manufacturer
-    "Special Pico Mic",               // 2: Product
-    NULL,                          // 3: Serials will use unique ID if possible
-    "UAC2",                        // 4: Audio Interface
+    "Malkawi Tech",                  // 1: Manufacturer
+    "Super Duper DSP Microphone",    // 2: Product
+    NULL,                            // 3: Serials will use unique ID if possible
+    "UAC2",                          // 4: Audio Interface
 };
 
 static uint16_t _desc_str[32 + 1];
