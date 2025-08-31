@@ -1,15 +1,11 @@
 #include "audio_usb.h"
 #include <math.h>
 
-
 /* Constants and Macros */
-#define SAMPLE_RATE            CFG_TUD_AUDIO_FUNC_1_SAMPLE_RATE
 #define FREQ                   440.0f
-#define AUDIO_BYTES_PER_SAMPLE 2 // 16-bit
-#define AUDIO_CHANNELS         1
-#define AUDIO_SAMPLES_PER_MS   (SAMPLE_RATE / 1000)
-#define AUDIO_PACKET_SAMPLES   (AUDIO_SAMPLES_PER_MS * AUDIO_BYTES_PER_SAMPLE * AUDIO_CHANNELS)
-#define AUDIO_PACKET_SIZE      AUDIO_PACKET_SAMPLES * AUDIO_BYTES_PER_SAMPLE
+
+/* Shared buffer */
+extern usb_buffer[AUDIO_PACKET_SIZE];
 
 /* Private Global Variables */
 static int sample_index = 0;
@@ -36,7 +32,7 @@ static void fill_audio_buffer(uint8_t *buffer, size_t n_samples) {
   }
 }
 
-/* Public Function Implementation */
+/* Public Functions */
 void audio_usb_init(void) {
   sampFreq = SAMPLE_RATE;
   clkValid = 1;
@@ -62,7 +58,7 @@ void audio_task(void) {
   }
 }
 
-/* TinyUSB Audio Class Callback Implementations */
+/* TinyUSB Audio Class Callbacks */
 // Copied directly from ecample code with minor changes
 
 // Invoked when audio class specific set request received for an EP

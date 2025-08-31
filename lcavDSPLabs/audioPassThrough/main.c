@@ -7,10 +7,7 @@
 
 #include "audioPassThrough.pio.h"
 #include "audio_usb.h"
-
-#define BCLK_PIN 2
-#define WS_PIN   BCLK_PIN+1
-#define DATA_PIN 4
+#include "audio_i2s.h"
 
 #define LED_DELAY_MS 500
 
@@ -27,40 +24,9 @@ int main() {
   board_init();
   tusb_init();
   audio_usb_init();
+  audio_i2s_init(pio0, 0);
+  audio_i2s_usb_dma_init();
   // debugGPIO_init();
-
-  /* PIO setup */
-  PIO pio = pio0;
-  uint sm = 0;
-  uint offset = pio_add_program(pio, &audioPassThrough_program);
-  audioPassThrough_program_init(pio, sm, offset, BCLK_PIN, WS_PIN, DATA_PIN);
-
-  // uint32_t clkdiv_reg = pio->sm[sm].clkdiv;
-  // uint32_t clkdiv_int = clkdiv_reg >> 16;
-  // uint32_t clkdiv_frac = (clkdiv_reg >> 8) & 0xFF;
-  // printf("SM%d Clock Divisor: %lu.%lu\n", sm, clkdiv_int, clkdiv_frac);
-
-  /* DMA Test */
-  uint dataChan = dma_claim_unused_channel(true);
-  dma_channel_config c = dma_channel_get_default_config(dataChan);
-  channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
-  channel_config_set_read_increment(&c, false);
-  channel_config_set_write_increment(&c, true);
-  channel_config_set_dreq(&c, pio_get_dreq(pio, sm, false));
-  channel_config_set_irq_quiet(&c, true);
-
-  uint32_t buffer[16];
-  for(int i = 0; i < 16; i++){
-    buffer[i] = 0xFFFFFFFF;
-  }
-  dma_channel_configure( dataChan, &c,
-    buffer,
-    &pio0_hw->rxf[sm],
-    16,
-    true
-  );
-
-  dma_channel_wait_for_finish_blocking(dataChan);
 
   while(1){
     tud_task();

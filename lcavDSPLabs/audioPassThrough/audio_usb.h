@@ -4,6 +4,18 @@
 #include <tusb.h>
 #include <bsp/board_api.h>
 
+/* Constants and Macros */
+#define SAMPLE_RATE            CFG_TUD_AUDIO_FUNC_1_SAMPLE_RATE
+#define AUDIO_BYTES_PER_SAMPLE 2 // 16-bit
+#define AUDIO_CHANNELS         1
+#define AUDIO_SAMPLES_PER_MS   (SAMPLE_RATE / 1000)
+#define AUDIO_PACKET_SAMPLES   (AUDIO_SAMPLES_PER_MS * AUDIO_BYTES_PER_SAMPLE * AUDIO_CHANNELS)
+#define AUDIO_PACKET_SIZE      AUDIO_PACKET_SAMPLES * AUDIO_BYTES_PER_SAMPLE
+
+/* Shared buffer */
+extern usb_buffer[AUDIO_PACKET_SIZE];
+
+
 /* Public Function Prototypes */
 void audio_usb_init(void);
 void audio_task(void);

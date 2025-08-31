@@ -38,7 +38,8 @@ pico_sdk_init()
 add_executable(audioPassThrough 
         main.c
         usb_descriptors.c
-        audio_usb.c )
+        audio_usb.c
+        audio_i2s.c )
 
 pico_set_program_name(audioPassThrough "audioPassThrough")
 pico_set_program_version(audioPassThrough "0.1")
