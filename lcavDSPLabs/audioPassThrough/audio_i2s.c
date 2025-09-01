@@ -13,12 +13,10 @@
 /* Private Global Variables */
 static PIO pio;
 static uint sm;
-volatile static uint16_t i2s_buffer[AUDIO_PACKET_SAMPLES*(BUFFER_COUNT-1)]; // The last control block is null trigger
 
-// Which alias are we going to use?... We want to write the same length, so that should
-// not be a probllem. We want to change the write address. Something else? No i do not
-// think so.
-static struct {volatile uint16_t *buffer_address;} dma_control_blocks[BUFFER_COUNT];
+volatile uint16_t i2s_buffer[AUDIO_PACKET_SAMPLES*(BUFFER_COUNT-1)]; // The last control block is null trigger
+
+static volatile uint16_t* dma_control_blocks[BUFFER_COUNT];
 
 // double buffering should be  implemented here actually
 // we should fill a buffer then process it and copy the final answer to the audio_usb buffer to be sent 
@@ -60,21 +58,17 @@ void audio_i2s_usb_dma_init() {
 
   for(int i = 0; i < BUFFER_COUNT; i++){
     if(i == BUFFER_COUNT-1){
-      dma_control_blocks[i].buffer_address = 0;
+      dma_control_blocks[i] = NULL;
       continue;
     }
-    dma_control_blocks[i].buffer_address = &i2s_buffer[i*AUDIO_PACKET_SAMPLES];
-  }
-
-  for(int i = 0; i < AUDIO_PACKET_SAMPLES*(BUFFER_COUNT-1); i++){
-    i2s_buffer[i] = 0x0F0F;
+    dma_control_blocks[i] = &i2s_buffer[i*AUDIO_PACKET_SAMPLES];
   }
 
   c = dma_channel_get_default_config(cntrl_chan);
   channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
   channel_config_set_read_increment(&c, true);
   channel_config_set_write_increment(&c, false);
-  channel_config_set_ring(&c, false, BUFFER_COUNT);
+  channel_config_set_ring(&c, false, 4);
   channel_config_set_irq_quiet(&c, true);
 
   dma_channel_configure(cntrl_chan, &c,
@@ -83,19 +77,17 @@ void audio_i2s_usb_dma_init() {
     1,
     true
   );
-  dma_channel_wait_for_finish_blocking(cntrl_chan);
-  uint test = 1;
+  // dma_channel_wait_for_finish_blocking(cntrl_chan);
+  // uint test = 1;
 
   // Maybe double the buffers and let the cpu processing IRQ trigger the control channels
   // Which triggers the data channel and they only write to half the buffer. hmmm interesting
-  // TODO: Test that the dmas now write to the whole buffer
-  // TODO: The datachannel is only triggered once, what chaining doing in this case then? hmmmm
 
   // The data channel will assert its IRQ flag when it gets a null trigger,
   // indicating the end of the control block list. We're just going to wait
   // for the IRQ flag instead of setting up an interrupt handler.
   while (!(dma_hw->intr & 1u << data_chan))
       tight_loop_contents();
+  uint test = 1;
   dma_hw->ints0 = 1u << data_chan;
-  test = 1;
 }
