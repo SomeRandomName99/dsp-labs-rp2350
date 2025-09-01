@@ -39,7 +39,9 @@ add_executable(audioPassThrough
         main.c
         usb_descriptors.c
         audio_usb.c
-        audio_i2s.c )
+        audio_i2s.c 
+        ring_buffer.c
+    )
 
 pico_set_program_name(audioPassThrough "audioPassThrough")
 pico_set_program_version(audioPassThrough "0.1")
