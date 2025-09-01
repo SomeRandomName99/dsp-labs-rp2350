@@ -1,6 +1,8 @@
 #ifndef RING_BUFFER_H
 #define RING_BUFFER_H
 
+#include "pico/stdlib.h"
+
 // A non thread safe implementation of a ring buffer
 typedef struct {
   volatile uint16_t head;
@@ -12,8 +14,8 @@ typedef struct {
 
 /* Constants and Macros */
 #define rb_init(name, num_elements, size_of_element) \
-  static uint8_t _rb_buffer[num_elements*size_of_element]; \
-  static ring_buffer_t name { \
+  static uint8_t _rb_buffer_##name[num_elements*size_of_element]; \
+  static ring_buffer_t name = { \
     .head = 0, \
     .tail = 0, \
     .capacity = num_elements, \
