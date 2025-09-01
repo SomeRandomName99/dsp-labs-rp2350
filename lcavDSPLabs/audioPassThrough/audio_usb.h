@@ -13,8 +13,7 @@
 #define AUDIO_PACKET_SIZE      AUDIO_PACKET_SAMPLES * AUDIO_BYTES_PER_SAMPLE
 
 /* Shared buffer */
-extern usb_buffer[AUDIO_PACKET_SIZE];
-
+volatile extern uint8_t usb_buffer[AUDIO_PACKET_SIZE];
 
 /* Public Function Prototypes */
 void audio_usb_init(void);

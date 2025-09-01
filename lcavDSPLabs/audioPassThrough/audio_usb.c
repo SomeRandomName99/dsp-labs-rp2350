@@ -5,7 +5,7 @@
 #define FREQ                   440.0f
 
 /* Shared buffer */
-extern usb_buffer[AUDIO_PACKET_SIZE];
+volatile uint8_t usb_buffer[AUDIO_PACKET_SIZE];
 
 /* Private Global Variables */
 static int sample_index = 0;
