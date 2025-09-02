@@ -26,6 +26,9 @@ typedef struct {
 /* Public Functions */
 bool rb_is_full(ring_buffer_t *rb);
 bool rb_is_empty(ring_buffer_t *rb);
-uint8_t * rb_is_get_next_free(ring_buffer_t *rb);
+uint8_t * rb_is_get_write_buffer(ring_buffer_t *rb);
+void increase_write_index(ring_buffer_t *rb);
+uint8_t * rb_is_get_read_buffer(ring_buffer_t *rb);
+void increase_read_index(ring_buffer_t *rb);
 
 #endif // RING_BUFFER_H
