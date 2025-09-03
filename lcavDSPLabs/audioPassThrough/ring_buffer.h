@@ -13,15 +13,24 @@ typedef struct {
 } ring_buffer_t;
 
 /* Constants and Macros */
-#define rb_init(name, num_elements, size_of_element) \
-  static uint8_t _rb_buffer_##name[num_elements*size_of_element]; \
-  static ring_buffer_t name = { \
+
+// Internal implemetation macro that is used to avoid code duplication.
+// Use the definition below
+#define _rb_init(linkage, name, num_elements, size_of_element) \
+  linkage uint8_t _rb_buffer_##name[num_elements*size_of_element]; \
+  linkage ring_buffer_t name = { \
     .head = 0, \
     .tail = 0, \
     .capacity = num_elements, \
     .element_size = size_of_element, \
     .buffer = _rb_buffer_##name \
   }
+
+#define rb_init_static(name, num_elements, type) \
+  _rb_init(static, name, num_elements, type)
+
+#define rb_init_shared(name, num_elements, type) \
+  _rb_init(/* no linkage */, name, num_elements, type)
 
 /* Public Functions */
 bool rb_is_full(ring_buffer_t *rb);
