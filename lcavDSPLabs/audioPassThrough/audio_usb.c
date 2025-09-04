@@ -38,7 +38,7 @@ void audio_task(void) {
       start_ms = curr_ms;
       
       // TODO: Add volume and mute control
-      uint8_t *buffer = (uint8_t *) rb_is_get_read_buffer(&g_proc_to_usb_buffer);
+      uint8_t *buffer = (uint8_t *) rb_get_read_buffer(&g_proc_to_usb_buffer);
       tud_audio_write(buffer, AUDIO_PACKET_SIZE);
   }
 }

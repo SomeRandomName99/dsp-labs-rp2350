@@ -20,6 +20,7 @@ static uint dma_data_chan;
 static void dma_handler() {
   dma_hw->ints0 = 1u << dma_data_chan;
 
+  uint8_t *next_buf = rb_get_write_buffer(&g_i2s_to_proc_buffer);
   uint8_t *next_buf = rb_is_get_write_buffer(&g_i2s_to_proc_buffer);
   bool trigger = true;
   dma_channel_set_read_addr(dma_data_chan, next_buf, trigger);
