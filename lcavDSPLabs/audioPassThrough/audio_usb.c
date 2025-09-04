@@ -1,4 +1,5 @@
 #include "audio_usb.h"
+#include "audio_bus.h"
 #include <math.h>
 
 /* Constants and Macros */
@@ -16,21 +17,6 @@ static uint16_t volume[CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_TX + 1];
 static uint32_t sampFreq;
 static uint8_t clkValid;
 static audio_control_range_4_n_t(2) sampleFreqRng;
-
-/* Private Helper Functions */
-static inline void put_sample16(uint8_t *dst, int32_t sample) {
-  dst[0] = sample & 0xFF;
-  dst[1] = (sample >> 8) & 0xFF;
-}
-
-static void fill_audio_buffer(uint8_t *buffer, size_t n_samples) {
-  for (size_t i = 0; i < n_samples; i++) {
-      float t = (float)sample_index / SAMPLE_RATE;
-      int32_t s = (int32_t)(sin(2.0f * M_PI * FREQ * t) * (1 << 15));
-      put_sample16(&buffer[i * AUDIO_BYTES_PER_SAMPLE], s);
-      sample_index++;
-  }
-}
 
 /* Public Functions */
 void audio_usb_init(void) {
@@ -52,9 +38,8 @@ void audio_task(void) {
       start_ms = curr_ms;
       
       // TODO: Add volume and mute control
-      static uint8_t audio_buffer[AUDIO_PACKET_SIZE];
-      fill_audio_buffer(audio_buffer, AUDIO_SAMPLES_PER_MS * 2);  // Send 96 samples (192 bytes)
-      tud_audio_write(audio_buffer, sizeof(audio_buffer));
+      uint8_t *buffer = (uint8_t *) rb_is_get_read_buffer(&g_proc_to_usb_buffer);
+      tud_audio_write(buffer, AUDIO_PACKET_SIZE);
   }
 }
 
