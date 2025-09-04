@@ -8,6 +8,8 @@
 #include "audioPassThrough.pio.h"
 #include "audio_usb.h"
 #include "audio_i2s.h"
+#include "audio_proc.h"
+#include "ring_buffer.h"
 
 #define LED_DELAY_MS 500
 
@@ -16,6 +18,10 @@
 
 void toggleLED();
 void debugGPIO_init();
+
+
+rb_init_shared(g_i2s_to_proc_buffer, 3, 96);
+rb_init_shared(g_proc_to_usb_buffer, 3, 96);
 
 int main() {
   /* Init functions */
@@ -26,26 +32,30 @@ int main() {
   audio_usb_init();
   audio_i2s_init(pio0, 0);
   audio_i2s_usb_dma_init();
-  // debugGPIO_init();
+
+  rb_init_static(test_buf, 3, 96);
 
   while(1){
     tud_task();
-    audio_task();
+    if(!rb_is_empty(&g_i2s_to_proc_buffer)){
+      audio_process();
+      audio_task();
+    }
     toggleLED();
   }
 }
 
 /* Local function implementation */
 void toggleLED(void){
-  static bool isOn = false;
+  static bool is_on = false;
 
   static uint32_t toggleTime = 0;
   uint32_t curTime =  board_millis();
   bool toggle = (curTime - toggleTime) >= 500;
 
   if(toggle){
-    isOn = !isOn;
-    cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, isOn);
+    is_on = !is_on;
+    cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, is_on);
     toggleTime = curTime;
   }
 }
