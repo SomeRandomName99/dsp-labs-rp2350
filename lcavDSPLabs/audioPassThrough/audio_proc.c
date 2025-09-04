@@ -1,0 +1,63 @@
+#include <math.h>
+
+#include "audio_bus.h"
+#include "audio_usb.h"
+
+/* Private Helper Functions */
+
+// Lightweight RNG for dithering
+static inline uint32_t fast_rand(uint32_t *state) {
+  uint32_t x = *state;
+  x ^= x << 13;
+  x ^= x >> 17;
+  x ^= x << 5;
+  *state = x;
+  return x;
+}
+
+static inline float rand_uniform(uint32_t *state) {
+  // 24 bits are extracted because that is the precision if an f32 mantissa
+  return (fast_rand(state) & 0xFFFFFF) / 16777216.0f; // 2^24
+}
+
+static inline int16_t float_to_pcm16_dither(float x, uint32_t *rng_state) {
+  // TPDF dithering
+  float dither = rand_uniform(rng_state) - rand_uniform(rng_state) * (1.0f / 32768.0f);
+
+  x += dither;
+
+  if (x >= 1.0f) x = 1.0f;
+  if (x < -1.0f) x = -1.0f;
+
+  return (int16_t) lrintf(x * 32767.0f); // we scale back to full range PCM16 here
+}
+
+// Convert PCM16 to float in range [-1.0, 1.0]
+static inline float pcm16_to_float(int16_t x) {
+  // https://discuss.pytorch.org/t/mechanism-of-represneting-pcm16-by-float32/141236
+  return (x < 0) ? (x / 32768.0f) : (x / 32767.0f); 
+}
+
+/* Public Functions */
+
+void audio_process(){
+  static uint32_t rng_state = 0x12345678; // Seed for RNG
+  static float processing_buf[AUDIO_PACKET_SAMPLES];
+
+  int16_t *audio_buf = (int16_t *) rb_is_get_read_buffer(&g_i2s_to_proc_buffer);
+  int16_t *usb_buf   = (int16_t *) usb_buffer;
+
+  for(int i = 0; i < AUDIO_PACKET_SAMPLES; i++){
+    processing_buf[i] = pcm16_to_float(audio_buf[i]);
+  }
+
+  for(int i = 0; i < AUDIO_PACKET_SAMPLES; i++){
+    usb_buf[i] = float_to_pcm16_dither(processing_buf[i], &rng_state);
+  }
+
+  rb_increase_write_index(&g_proc_to_usb_buffer);
+  rb_increase_read_index(&g_i2s_to_proc_buffer);
+}
+
+
+
