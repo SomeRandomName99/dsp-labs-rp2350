@@ -33,11 +33,37 @@ typedef struct {
   _rb_init(/* no linkage */, name, num_elements, type)
 
 /* Public Functions */
-bool rb_is_full(ring_buffer_t *rb);
-bool rb_is_empty(ring_buffer_t *rb);
-uint8_t * rb_is_get_write_buffer(ring_buffer_t *rb);
-void increase_write_index(ring_buffer_t *rb);
-uint8_t * rb_is_get_read_buffer(ring_buffer_t *rb);
-void increase_read_index(ring_buffer_t *rb);
+static inline uint16_t circular_increment(ring_buffer_t *rb, uint16_t index){
+  if(++index == rb->capacity) index = 0;
+  return index;
+}
+
+static inline bool rb_is_full(ring_buffer_t *rb) {
+  return circular_increment(rb, rb->head) == rb->tail;
+}
+
+static inline bool rb_is_empty(ring_buffer_t *rb) {
+  return rb->head == rb->tail;
+}
+
+static inline uint8_t * rb_is_get_write_buffer(ring_buffer_t *rb) {
+  assert(!rb_is_full(rb));
+  return &rb->buffer[rb->head * rb->element_size];
+}
+
+static inline void increase_write_index(ring_buffer_t *rb) {
+  assert(!rb_is_full(rb));
+  rb->head = circular_increment(rb, rb->head);
+}
+
+static inline uint8_t * rb_is_get_read_buffer(ring_buffer_t *rb) {
+  assert(!rb_is_empty(rb));
+  return &rb->buffer[rb->tail * rb->element_size];
+}
+
+static inline void increase_read_index(ring_buffer_t *rb) {
+  assert(!rb_is_empty(rb));
+  rb->tail = circular_increment(rb, rb->tail);
+}
 
 #endif // RING_BUFFER_H
