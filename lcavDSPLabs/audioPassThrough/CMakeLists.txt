@@ -75,6 +75,7 @@ target_link_libraries(audioPassThrough
         pico_cyw43_arch_none
         tinyusb_device
         tinyusb_board
+        CMSISDSP
     )
 
 pico_enable_stdio_uart(audioPassThrough 1)

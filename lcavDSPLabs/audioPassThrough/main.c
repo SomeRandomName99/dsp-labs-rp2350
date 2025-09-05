@@ -37,6 +37,7 @@ int main() {
   audio_usb_init();
   audio_i2s_init(pio0, 0);
   audio_i2s_usb_dma_init();
+  audio_proc_init();
 
   while(1){
     tud_task();

@@ -1,7 +1,16 @@
-#include <math.h>
+#include "arm_math.h"
 
 #include "audio_bus.h"
 #include "audio_usb.h"
+
+/* Constants and Macros */
+#define BLOCK_SIZE AUDIO_PACKET_SAMPLES
+#define NUM_TAPS 2
+
+// https://arm-software.github.io/CMSIS-DSP/latest/group__FIR.html
+static float32_t fir_coeffs[NUM_TAPS + 2] = {1.0f, -1.0f, 0, 0}; // Length must be a multiple of 4 for Helium
+static float32_t fir_state[NUM_TAPS+2*BLOCK_SIZE-1];
+static arm_fir_instance_f32 fir_instance;
 
 /* Private Helper Functions */
 
@@ -42,8 +51,7 @@ static inline int16_t float_to_pcm16_dither(float x, uint32_t *rng_state) {
   if (x >= 1.0f) x = 1.0f;
   if (x < -1.0f) x = -1.0f;
 
-  int16_t test = fast_lrintf_to_nearest(x * 32767.0f);
-  return test; // we scale back to full range PCM16 here
+  return fast_lrintf_to_nearest(x * 32767.0f); // we scale back to full range PCM16 here
 }
 
 // Convert PCM16 to float in range [-1.0, 1.0]
@@ -54,20 +62,28 @@ static inline float pcm16_to_float(int16_t x) {
 
 /* Public Functions */
 
+void audio_proc_init() {
+  arm_fir_init_f32(&fir_instance, NUM_TAPS, fir_coeffs, fir_state, BLOCK_SIZE);
+}
+
 void audio_process(){
   static uint32_t rng_state = 0x12345678; // Seed for RNG
-  static float processing_buf[AUDIO_PACKET_SAMPLES];
+  // Two buffers are needed because a lot of CMSIS-DSP functions are not inplace
+  static float processing_buf1[AUDIO_PACKET_SAMPLES];
+  static float processing_buf2[AUDIO_PACKET_SAMPLES];
 
   int16_t *audio_buf = (int16_t *) rb_get_read_buffer(&g_i2s_to_proc_buffer);
   int16_t *usb_buf   = (int16_t *) rb_get_write_buffer(&g_proc_to_usb_buffer);
 
   for(int i = 0; i < AUDIO_PACKET_SAMPLES; i++){
-    processing_buf[i] = pcm16_to_float(audio_buf[i]);
+    processing_buf1[i] = pcm16_to_float(audio_buf[i]);
   }
   rb_increase_read_index(&g_i2s_to_proc_buffer);
 
+  arm_fir_f32(&fir_instance, processing_buf1, processing_buf2, BLOCK_SIZE);
+
   for(int i = 0; i < AUDIO_PACKET_SAMPLES; i++){
-    usb_buf[i] = float_to_pcm16_dither(processing_buf[i], &rng_state);
+    usb_buf[i] = float_to_pcm16_dither(processing_buf2[i], &rng_state);
   }
   rb_increase_write_index(&g_proc_to_usb_buffer);
   gpio_put(15, 0); // TODO: Remove after debugging
