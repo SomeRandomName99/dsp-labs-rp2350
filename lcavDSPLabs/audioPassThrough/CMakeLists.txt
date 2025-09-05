@@ -33,6 +33,14 @@ project(audioPassThrough C CXX ASM)
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
+# Pull in CMSIS-DSP
+set(CMSISCORE "$ENV{PICO_SDK_PATH}/src/rp2_common/cmsis/stub/CMSIS/Core")
+set(DISABLEFLOAT16 ON)
+set(HELIUM ON) # Fast DSP functions on M33
+set(CMSISDSP "${CMAKE_CURRENT_LIST_DIR}/../CMSIS-DSP")
+add_subdirectory(${CMSISDSP}/Source bin_dsp)
+target_compile_options(CMSISDSP PRIVATE -Ofast)
+
 # Add executable. Default name is the project name, version 0.1
 
 add_executable(audioPassThrough 
@@ -42,6 +50,7 @@ add_executable(audioPassThrough
         audio_i2s.c 
         audio_proc.c
     )
+add_dependencies(audioPassThrough CMSISDSP)
 
 pico_set_program_name(audioPassThrough "audioPassThrough")
 pico_set_program_version(audioPassThrough "0.1")
@@ -55,6 +64,8 @@ target_link_libraries(audioPassThrough pico_stdlib)
 # Add the standard include files to the build
 target_include_directories(audioPassThrough PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
+        ${CMAKE_CURRENT_LIST_DIR}/../CMSIS-DSP/Include
+        ${CMSISCORE}/Include
 )
 
 # Add any user requested libraries
