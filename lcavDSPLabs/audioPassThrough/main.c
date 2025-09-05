@@ -20,8 +20,8 @@ void toggleLED();
 void debugGPIO_init();
 
 
-rb_init_shared(g_i2s_to_proc_buffer, 3, 96);
-rb_init_shared(g_proc_to_usb_buffer, 3, 96);
+rb_init_shared(g_i2s_to_proc_buffer, 3, AUDIO_PACKET_SIZE);
+rb_init_shared(g_proc_to_usb_buffer, 3, AUDIO_PACKET_SIZE);
 
 int main() {
   /* Init functions */
@@ -29,11 +29,14 @@ int main() {
   cyw43_arch_init();
   board_init();
   tusb_init();
+
+  debugGPIO_init();
+  gpio_put(15, 1); // TODO: Remove after debugging
+  sleep_ms(100);
+
   audio_usb_init();
   audio_i2s_init(pio0, 0);
   audio_i2s_usb_dma_init();
-
-  rb_init_static(test_buf, 3, 96);
 
   while(1){
     tud_task();

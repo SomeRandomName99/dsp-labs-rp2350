@@ -5,12 +5,6 @@
 /* Constants and Macros */
 #define FREQ                   440.0f
 
-/* Shared buffer */
-volatile uint8_t usb_buffer[AUDIO_PACKET_SIZE];
-
-/* Private Global Variables */
-static int sample_index = 0;
-
 // Audio controls
 static bool mute[CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_TX + 1];
 static uint16_t volume[CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_TX + 1];
@@ -40,6 +34,7 @@ void audio_task(void) {
       // TODO: Add volume and mute control
       uint8_t *buffer = (uint8_t *) rb_get_read_buffer(&g_proc_to_usb_buffer);
       tud_audio_write(buffer, AUDIO_PACKET_SIZE);
+      rb_increase_read_index(&g_proc_to_usb_buffer);
   }
 }
 

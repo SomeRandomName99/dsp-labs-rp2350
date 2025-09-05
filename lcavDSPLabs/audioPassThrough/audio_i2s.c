@@ -17,14 +17,14 @@ static uint sm;
 static uint dma_data_chan;
 
 /* Private Helper Functions */
-static void dma_handler() {
+void dma_handler() {
   dma_hw->ints0 = 1u << dma_data_chan;
 
-  uint8_t *next_buf = rb_get_write_buffer(&g_i2s_to_proc_buffer);
-  uint8_t *next_buf = rb_is_get_write_buffer(&g_i2s_to_proc_buffer);
+  void *next_buf = rb_get_write_buffer(&g_i2s_to_proc_buffer);
+  rb_increase_write_index(&g_i2s_to_proc_buffer);
   bool trigger = true;
-  dma_channel_set_read_addr(dma_data_chan, next_buf, trigger);
-
+  dma_channel_set_write_addr(dma_data_chan, next_buf, trigger);
+  gpio_put(15, 1); // TODO: Remove after debugging
 }
 
 /* Public Functions */
@@ -37,21 +37,23 @@ void audio_i2s_init(PIO pio_, uint sm_){
 }
 
 void audio_i2s_usb_dma_init() {
-  uint data_chan = dma_claim_unused_channel(true);
+  dma_data_chan = dma_claim_unused_channel(true);
 
-  dma_channel_config c = dma_channel_get_default_config(data_chan);
+  dma_channel_config c = dma_channel_get_default_config(dma_data_chan);
   channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
   channel_config_set_read_increment(&c, false);
   channel_config_set_write_increment(&c, true);
   channel_config_set_dreq(&c, pio_get_dreq(pio, sm, false));
-  channel_config_set_irq_quiet(&c, true);
-  dma_channel_set_irq0_enabled(data_chan, true);
+  dma_channel_set_irq0_enabled(dma_data_chan, true);
   irq_set_exclusive_handler(DMA_IRQ_0, dma_handler); 
   irq_set_enabled(DMA_IRQ_0, true);
 
+  gpio_put(15, 0); // TODO: Remove after debugging
   bool trigger = true;
-  dma_channel_configure(data_chan, &c,
-    g_i2s_to_proc_buffer.buffer, // Set by control channel
+  void *write_buf = rb_get_write_buffer(&g_i2s_to_proc_buffer);
+  rb_increase_write_index(&g_i2s_to_proc_buffer);
+  dma_channel_configure(dma_data_chan, &c,
+    write_buf,
     &pio0_hw->rxf[sm],
     AUDIO_PACKET_SAMPLES/2, // each sample is 16 bits and we move 32-bits per transfer
     trigger

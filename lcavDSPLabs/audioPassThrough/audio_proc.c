@@ -20,6 +20,19 @@ static inline float rand_uniform(uint32_t *state) {
   return (fast_rand(state) & 0xFFFFFF) / 16777216.0f; // 2^24
 }
 
+static inline int32_t fast_lrintf_to_nearest(float f) {
+  int32_t result;
+  asm (
+    "vmov s0, %1\n"
+    "vcvtn.s32.f32 s0, s0\n"
+    "vmov %0, s0\n"
+    :"=r"(result)
+    :"r"(f)
+    :"s0"
+  );
+  return result;
+}
+
 static inline int16_t float_to_pcm16_dither(float x, uint32_t *rng_state) {
   // TPDF dithering
   float dither = rand_uniform(rng_state) - rand_uniform(rng_state) * (1.0f / 32768.0f);
@@ -29,7 +42,8 @@ static inline int16_t float_to_pcm16_dither(float x, uint32_t *rng_state) {
   if (x >= 1.0f) x = 1.0f;
   if (x < -1.0f) x = -1.0f;
 
-  return (int16_t) lrintf(x * 32767.0f); // we scale back to full range PCM16 here
+  int16_t test = fast_lrintf_to_nearest(x * 32767.0f);
+  return test; // we scale back to full range PCM16 here
 }
 
 // Convert PCM16 to float in range [-1.0, 1.0]
@@ -44,20 +58,17 @@ void audio_process(){
   static uint32_t rng_state = 0x12345678; // Seed for RNG
   static float processing_buf[AUDIO_PACKET_SAMPLES];
 
-  int16_t *audio_buf = (int16_t *) rb_is_get_read_buffer(&g_i2s_to_proc_buffer);
-  int16_t *usb_buf   = (int16_t *) usb_buffer;
+  int16_t *audio_buf = (int16_t *) rb_get_read_buffer(&g_i2s_to_proc_buffer);
+  int16_t *usb_buf   = (int16_t *) rb_get_write_buffer(&g_proc_to_usb_buffer);
 
   for(int i = 0; i < AUDIO_PACKET_SAMPLES; i++){
     processing_buf[i] = pcm16_to_float(audio_buf[i]);
   }
+  rb_increase_read_index(&g_i2s_to_proc_buffer);
 
   for(int i = 0; i < AUDIO_PACKET_SAMPLES; i++){
     usb_buf[i] = float_to_pcm16_dither(processing_buf[i], &rng_state);
   }
-
   rb_increase_write_index(&g_proc_to_usb_buffer);
-  rb_increase_read_index(&g_i2s_to_proc_buffer);
+  gpio_put(15, 0); // TODO: Remove after debugging
 }
-
-
-
