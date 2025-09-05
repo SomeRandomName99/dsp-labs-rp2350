@@ -1,0 +1,3 @@
+[submodule "lcavDSPLabs/CMSIS-DSP"]
+	path = lcavDSPLabs/CMSIS-DSP
+	url = https://github.com/ARM-software/CMSIS-DSP.git
