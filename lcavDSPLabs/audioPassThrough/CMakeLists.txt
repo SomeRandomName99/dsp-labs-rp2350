@@ -38,7 +38,7 @@ set(CMSISCORE "$ENV{PICO_SDK_PATH}/src/rp2_common/cmsis/stub/CMSIS/Core")
 set(DISABLEFLOAT16 ON)
 set(CMSISDSP "${CMAKE_CURRENT_LIST_DIR}/../CMSIS-DSP")
 add_subdirectory(${CMSISDSP}/Source bin_dsp)
-target_compile_options(CMSISDSP PRIVATE -Ofast)
+target_compile_options(CMSISDSP PRIVATE -Ofast -ffunction-sections -fdata-sections)
 
 # Add executable. Default name is the project name, version 0.1
 
