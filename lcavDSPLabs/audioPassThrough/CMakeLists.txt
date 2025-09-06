@@ -36,7 +36,6 @@ pico_sdk_init()
 # Pull in CMSIS-DSP
 set(CMSISCORE "$ENV{PICO_SDK_PATH}/src/rp2_common/cmsis/stub/CMSIS/Core")
 set(DISABLEFLOAT16 ON)
-set(HELIUM ON) # Fast DSP functions on M33
 set(CMSISDSP "${CMAKE_CURRENT_LIST_DIR}/../CMSIS-DSP")
 add_subdirectory(${CMSISDSP}/Source bin_dsp)
 target_compile_options(CMSISDSP PRIVATE -Ofast)
