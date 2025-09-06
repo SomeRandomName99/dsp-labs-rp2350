@@ -8,8 +8,8 @@
 #define NUM_TAPS 2
 
 // https://arm-software.github.io/CMSIS-DSP/latest/group__FIR.html
-static float32_t fir_coeffs[NUM_TAPS + 2] = {1.0f, -1.0f, 0, 0}; // Length must be a multiple of 4 for Helium
-static float32_t fir_state[NUM_TAPS+2*BLOCK_SIZE-1];
+static float32_t fir_coeffs[NUM_TAPS + 2] = {1.0f, -1.0f};
+static float32_t fir_state[NUM_TAPS*BLOCK_SIZE-1];
 static arm_fir_instance_f32 fir_instance;
 
 /* Private Helper Functions */
