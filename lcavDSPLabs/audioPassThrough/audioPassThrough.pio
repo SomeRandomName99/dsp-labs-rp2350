@@ -11,15 +11,17 @@
 
 .wrap_target
 ; Read in 16 bits and ignore the rest of the I2S Packet; Mic's resolution is 18
-                          ;|\ BCLK
-                          ;||\ WS
+                          ;|\ WS
+                          ;||\ BCLK
 set x, 15           side 0b00
+nop                 side 0b01 ; These 2 nops are needed because the ICS43434 microcphone
+nop                 side 0b00 ; has it data ready on the second rising edge after WS instead of the first.
 data_loop:
 in pins, 1          side 0b01
 jmp x--, data_loop  side 0b00 
 
 ; Stall cannot be use because BCLK must keep toggling
-set x, 14           side 0b01 
+set x, 13           side 0b01 
 time_loop:
 nop                 side 0b00 
 jmp x--, time_loop  side 0b01

@@ -8,7 +8,7 @@
 #define NUM_TAPS 2
 
 // https://arm-software.github.io/CMSIS-DSP/latest/group__FIR.html
-static float32_t fir_coeffs[NUM_TAPS + 2] = {1.0f, -1.0f};
+static float32_t fir_coeffs[NUM_TAPS] = {-1.0f, 1.0f};
 static float32_t fir_state[NUM_TAPS*BLOCK_SIZE-1];
 static arm_fir_instance_f32 fir_instance;
 
@@ -44,7 +44,7 @@ static inline int32_t fast_lrintf_to_nearest(float f) {
 
 static inline int16_t float_to_pcm16_dither(float x, uint32_t *rng_state) {
   // TPDF dithering
-  float dither = rand_uniform(rng_state) - rand_uniform(rng_state) * (1.0f / 32768.0f);
+  float dither = (rand_uniform(rng_state) - rand_uniform(rng_state)) * (1.0f / 32768.0f);
 
   x += dither;
 
@@ -102,5 +102,4 @@ void audio_process(){
     usb_buf[i] = float_to_pcm16_dither(processing_buf2[i], &rng_state);
   }
   rb_increase_write_index(&g_proc_to_usb_buffer);
-  gpio_put(15, 0); // TODO: Remove after debugging
 }
