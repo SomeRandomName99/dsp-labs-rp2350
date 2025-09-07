@@ -34,7 +34,7 @@ project(audioPassThrough C CXX ASM)
 pico_sdk_init()
 
 # Pull in CMSIS-DSP
-set(CMSISCORE "$ENV{PICO_SDK_PATH}/src/rp2_common/cmsis/stub/CMSIS/Core")
+set(CMSISCORE "${PICO_SDK_PATH}/src/rp2_common/cmsis/stub/CMSIS/Core")
 set(DISABLEFLOAT16 ON)
 set(CMSISDSP "${CMAKE_CURRENT_LIST_DIR}/../CMSIS-DSP")
 add_subdirectory(${CMSISDSP}/Source bin_dsp)
@@ -48,6 +48,7 @@ add_executable(audioPassThrough
         audio_usb.c
         audio_i2s.c 
         audio_proc.c
+        audio_bus.c
     )
 add_dependencies(audioPassThrough CMSISDSP)
 

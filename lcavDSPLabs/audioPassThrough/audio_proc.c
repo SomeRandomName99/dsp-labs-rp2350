@@ -60,13 +60,24 @@ static inline float pcm16_to_float(int16_t x) {
   return (x < 0) ? (x / 32768.0f) : (x / 32767.0f); 
 }
 
-/* Public Functions */
+static void audio_process_mute() {
+  rb_increase_read_index(&g_i2s_to_proc_buffer);
+  int16_t *usb_buf   = (int16_t *) rb_get_write_buffer(&g_proc_to_usb_buffer);
+  memset(usb_buf, 0, AUDIO_PACKET_SIZE);
+  rb_increase_write_index(&g_proc_to_usb_buffer);
+}
 
+/* Public Functions */
 void audio_proc_init() {
   arm_fir_init_f32(&fir_instance, NUM_TAPS, fir_coeffs, fir_state, BLOCK_SIZE);
 }
 
 void audio_process(){
+  if(audio_mute){
+    audio_process_mute();
+    return;
+  }
+
   static uint32_t rng_state = 0x12345678; // Seed for RNG
   // Two buffers are needed because a lot of CMSIS-DSP functions are not inplace
   static float processing_buf1[AUDIO_PACKET_SAMPLES];
@@ -81,6 +92,11 @@ void audio_process(){
   rb_increase_read_index(&g_i2s_to_proc_buffer);
 
   arm_fir_f32(&fir_instance, processing_buf1, processing_buf2, BLOCK_SIZE);
+  float32_t volume_difference = audio_volume_multiplier - 1.0f;
+  arm_abs_f32(&volume_difference, &volume_difference, 1);
+  if(volume_difference < 0.001f){
+    arm_scale_f32(processing_buf2, audio_volume_multiplier, processing_buf2, BLOCK_SIZE);
+  }
 
   for(int i = 0; i < AUDIO_PACKET_SAMPLES; i++){
     usb_buf[i] = float_to_pcm16_dither(processing_buf2[i], &rng_state);

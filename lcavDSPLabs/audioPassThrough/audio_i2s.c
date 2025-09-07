@@ -24,7 +24,6 @@ void dma_handler() {
   rb_increase_write_index(&g_i2s_to_proc_buffer);
   bool trigger = true;
   dma_channel_set_write_addr(dma_data_chan, next_buf, trigger);
-  gpio_put(15, 1); // TODO: Remove after debugging
 }
 
 /* Public Functions */
@@ -48,7 +47,6 @@ void audio_i2s_usb_dma_init() {
   irq_set_exclusive_handler(DMA_IRQ_0, dma_handler); 
   irq_set_enabled(DMA_IRQ_0, true);
 
-  gpio_put(15, 0); // TODO: Remove after debugging
   bool trigger = true;
   void *write_buf = rb_get_write_buffer(&g_i2s_to_proc_buffer);
   rb_increase_write_index(&g_i2s_to_proc_buffer);

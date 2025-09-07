@@ -9,6 +9,7 @@
 #include "audio_usb.h"
 #include "audio_i2s.h"
 #include "audio_proc.h"
+#include "audio_bus.h"
 #include "ring_buffer.h"
 
 #define LED_DELAY_MS 500
@@ -18,33 +19,29 @@
 
 void toggleLED();
 void debugGPIO_init();
-
-
-rb_init_shared(g_i2s_to_proc_buffer, 3, AUDIO_PACKET_SIZE);
-rb_init_shared(g_proc_to_usb_buffer, 3, AUDIO_PACKET_SIZE);
+void wireless_init();
 
 int main() {
   /* Init functions */
   stdio_uart_init();
-  cyw43_arch_init();
+  wireless_init();
   board_init();
   tusb_init();
 
-  debugGPIO_init();
-  gpio_put(15, 1); // TODO: Remove after debugging
-  sleep_ms(100);
+  // debugGPIO_init();
 
   audio_usb_init();
+  audio_proc_init();
   audio_i2s_init(pio0, 0);
   audio_i2s_usb_dma_init();
-  audio_proc_init();
+  
 
   while(1){
     tud_task();
-    if(!rb_is_empty(&g_i2s_to_proc_buffer)){
+    if(!rb_is_empty(&g_i2s_to_proc_buffer) && !rb_is_full(&g_proc_to_usb_buffer)){
       audio_process();
-      audio_task();
     }
+    audio_task();
     toggleLED();
   }
 }
@@ -70,4 +67,9 @@ void debugGPIO_init(){
 
   gpio_set_dir(DBG_LOOP_PIN, GPIO_OUT);
   gpio_set_dir(DBG_AUDIO_PIN, GPIO_OUT);
+}
+
+void wireless_init(){
+  cyw43_arch_init();
+  cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, true);
 }

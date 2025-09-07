@@ -2,12 +2,9 @@
 #include "audio_bus.h"
 #include <math.h>
 
-/* Constants and Macros */
-#define FREQ                   440.0f
-
 // Audio controls
 static bool mute[CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_TX + 1];
-static uint16_t volume[CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_TX + 1];
+static int16_t volume_db[CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_TX + 1];
 static uint32_t sampFreq;
 static uint8_t clkValid;
 static audio_control_range_4_n_t(2) sampleFreqRng;
@@ -31,10 +28,12 @@ void audio_task(void) {
   if (curr_ms - start_ms >= 1) {
       start_ms = curr_ms;
       
-      // TODO: Add volume and mute control
+    while(!rb_is_empty(&g_proc_to_usb_buffer)){
       uint8_t *buffer = (uint8_t *) rb_get_read_buffer(&g_proc_to_usb_buffer);
       tud_audio_write(buffer, AUDIO_PACKET_SIZE);
       rb_increase_read_index(&g_proc_to_usb_buffer);
+    }
+    // gpio_put(14, 0);
   }
 }
 
@@ -104,6 +103,11 @@ bool tud_audio_set_req_entity_cb(uint8_t rhport, tusb_control_request_t const *p
         TU_VERIFY(p_request->wLength == sizeof(audio_control_cur_1_t));
 
         mute[channelNum] = ((audio_control_cur_1_t *) pBuff)->bCur;
+        if(mute[0] || mute[1]) {
+          audio_mute = true;
+        } else {
+          audio_mute = false;
+        }
 
         TU_LOG2("    Set Mute: %d of channel: %u\r\n", mute[channelNum], channelNum);
         return true;
@@ -112,9 +116,10 @@ bool tud_audio_set_req_entity_cb(uint8_t rhport, tusb_control_request_t const *p
         // Request uses format layout 2
         TU_VERIFY(p_request->wLength == sizeof(audio_control_cur_2_t));
 
-        volume[channelNum] = (uint16_t) ((audio_control_cur_2_t *) pBuff)->bCur;
+        volume_db[channelNum] = (int16_t) ((audio_control_cur_2_t *) pBuff)->bCur;
+        audio_volume_multiplier = powf(10.0f, (float)volume_db[channelNum] / 20.0f);
 
-        TU_LOG2("    Set Volume: %d dB of channel: %u\r\n", volume[channelNum], channelNum);
+        TU_LOG2("    Set Volume: %d dB of channel: %u\r\n", volume_db[channelNum], channelNum);
         return true;
 
         // Unknown/Unsupported control
@@ -207,7 +212,7 @@ bool tud_audio_get_req_entity_cb(uint8_t rhport, tusb_control_request_t const *p
         switch (p_request->bRequest) {
           case AUDIO_CS_REQ_CUR:
             TU_LOG2("    Get Volume of channel: %u\r\n", channelNum);
-            return tud_audio_buffer_and_schedule_control_xfer(rhport, p_request, &volume[channelNum], sizeof(volume[channelNum]));
+            return tud_audio_buffer_and_schedule_control_xfer(rhport, p_request, &volume_db[channelNum], sizeof(volume_db[channelNum]));
 
           case AUDIO_CS_REQ_RANGE:
             TU_LOG2("    Get Volume range of channel: %u\r\n", channelNum);
@@ -216,9 +221,9 @@ bool tud_audio_get_req_entity_cb(uint8_t rhport, tusb_control_request_t const *p
                 ret;
 
             ret.wNumSubRanges = 1;
-            ret.subrange[0].bMin = -90;// -90 dB
-            ret.subrange[0].bMax = 0; // 0 dB, as the current hardware has no amplification capabilities
-            ret.subrange[0].bRes = 1;  // 1 dB steps
+            ret.subrange[0].bMin = -90; // dB
+            ret.subrange[0].bMax = 0;   // dB, as the current hardware has no amplification capabilities
+            ret.subrange[0].bRes = 1;   // 1 dB steps
 
             return tud_audio_buffer_and_schedule_control_xfer(rhport, p_request, (void *) &ret, sizeof(ret));
 
