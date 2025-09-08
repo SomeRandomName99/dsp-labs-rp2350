@@ -18,7 +18,7 @@
 #define DBG_AUDIO_PIN 15
 
 void toggleLED();
-void debugGPIO_init();
+void debug_gpio_init();
 void wireless_init();
 
 int main() {
@@ -27,8 +27,7 @@ int main() {
   wireless_init();
   board_init();
   tusb_init();
-
-  // debugGPIO_init();
+  debug_gpio_init();
 
   audio_usb_init();
   audio_proc_init();
@@ -61,7 +60,7 @@ void toggleLED(void){
   }
 }
 
-void debugGPIO_init(){
+void debug_gpio_init(){
   gpio_init(DBG_LOOP_PIN);
   gpio_init(DBG_AUDIO_PIN);
 

@@ -13,16 +13,17 @@ Another difference is that I will be using usb to transmit audio data because I 
 I might add support to it again if I ever find it.
 
 # Project checklist
-- [ ] USB audio passthrough(currently work in progress)
-- [ ] Alien voice effect
+- [X] USB audio passthrough (Also has DC Filtering and Mute and Volume controls)
+- [ ] Alien voice effect (Currently work in progress)
 - [ ] Digital filter design
 - [ ] Granular synthesis
 - [ ] Linear prediction
 - [ ] DFT pitch shifting
 
 # Stretch goals
-I would love to make some of the projects by Prof. [V. Hunter Adams](https://vanhunteradams.com), particularly the galton board project.
+I would love to do some of the projects by Prof. [V. Hunter Adams](https://vanhunteradams.com), particularly the galton board project. But the rest are also very cool projects.
+I will have to decide on a subset of them, or just do them all. We will see.
 
 #Acknowledgements
 Special thanks to Martin Vetterli and Paolo Prandoni for their great course materials and published labs. Also thanks to V. Hunter Adams for his lectures on
-Rpi pico programming and interesting labs.
+Rpi pico programming and interesting programming projects that have definitely piqued my interest.

@@ -79,7 +79,7 @@ void audio_process(){
   }
 
   static uint32_t rng_state = 0x12345678; // Seed for RNG
-  // Two buffers are needed because a lot of CMSIS-DSP functions are not inplace
+  // Two buffers are needed because CMSIS-DSP filter functions are not inplace
   static float processing_buf1[AUDIO_PACKET_SAMPLES];
   static float processing_buf2[AUDIO_PACKET_SAMPLES];
 

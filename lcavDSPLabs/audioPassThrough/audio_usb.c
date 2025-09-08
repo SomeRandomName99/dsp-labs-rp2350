@@ -33,7 +33,6 @@ void audio_task(void) {
       tud_audio_write(buffer, AUDIO_PACKET_SIZE);
       rb_increase_read_index(&g_proc_to_usb_buffer);
     }
-    // gpio_put(14, 0);
   }
 }
 
