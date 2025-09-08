@@ -60,7 +60,7 @@ static inline float pcm16_to_float(int16_t x) {
   return (x < 0) ? (x / 32768.0f) : (x / 32767.0f); 
 }
 
-static void audio_process_mute() {
+static inline void audio_process_mute() {
   rb_increase_read_index(&g_i2s_to_proc_buffer);
   int16_t *usb_buf   = (int16_t *) rb_get_write_buffer(&g_proc_to_usb_buffer);
   memset(usb_buf, 0, AUDIO_PACKET_SIZE);
@@ -68,6 +68,8 @@ static void audio_process_mute() {
 }
 
 /* Public Functions */
+#if LAB_ID == 2
+
 void audio_proc_init() {
   arm_fir_init_f32(&fir_dc_removal_instance, NUM_TAPS, fir_dc_removal_coeffs, fir_dc_removal_state, BLOCK_SIZE);
 }
@@ -102,3 +104,4 @@ void audio_process(){
   }
   rb_increase_write_index(&g_proc_to_usb_buffer);
 }
+#endif // LAB_ID == 2

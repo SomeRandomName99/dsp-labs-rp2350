@@ -5,7 +5,7 @@
 #include "hardware/pio.h"
 #include "hardware/dma.h"
 
-#include "audioPassThrough.pio.h"
+#include "firmware_dsp.pio.h"
 #include "audio_usb.h"
 #include "audio_i2s.h"
 #include "audio_proc.h"

@@ -1,4 +1,4 @@
-.program audioPassThrough
+.program firmware_dsp
 
 .pio_version 0
 
@@ -34,7 +34,7 @@ nop                 side 0b11
 .wrap
 
 % c-sdk {
-static inline void audioPassThrough_program_init(PIO pio, uint sm, uint offset, uint pinBCLK, uint pinWS, uint pinData){
+static inline void firmware_dsp_program_init(PIO pio, uint sm, uint offset, uint pinBCLK, uint pinWS, uint pinData){
   pio_gpio_init(pio, pinBCLK);
   pio_gpio_init(pio, pinWS);
   pio_gpio_init(pio, pinData);
@@ -43,7 +43,7 @@ static inline void audioPassThrough_program_init(PIO pio, uint sm, uint offset, 
   pio_sm_set_consecutive_pindirs(pio, sm, pinWS, 1, true);
   pio_sm_set_consecutive_pindirs(pio, sm, pinData, 1, false);
 
-  pio_sm_config c = audioPassThrough_program_get_default_config(offset);
+  pio_sm_config c = firmware_dsp_program_get_default_config(offset);
   sm_config_set_sideset_pins(&c, pinBCLK);
   sm_config_set_in_pins(&c, pinData);
   // We autopush after 32, which will be after collecting 2 microphone samples(single channel)

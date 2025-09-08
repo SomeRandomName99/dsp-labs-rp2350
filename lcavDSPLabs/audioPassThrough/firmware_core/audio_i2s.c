@@ -2,7 +2,7 @@
 #include "audio_i2s.h"
 #include "audio_usb.h"
 #include "audio_bus.h"
-#include "audioPassThrough.pio.h"
+#include "firmware_dsp.pio.h"
 
 /* Constants and Macros*/
 #define BCLK_PIN 2
@@ -30,9 +30,9 @@ void dma_handler() {
 void audio_i2s_init(PIO pio_, uint sm_){
   pio = pio_;
   sm = sm_;
-  uint offset = pio_add_program(pio, &audioPassThrough_program);
+  uint offset = pio_add_program(pio, &firmware_dsp_program);
   hard_assert(offset != -1);
-  audioPassThrough_program_init(pio, sm, offset, BCLK_PIN, WS_PIN, DATA_PIN);
+  firmware_dsp_program_init(pio, sm, offset, BCLK_PIN, WS_PIN, DATA_PIN);
 }
 
 void audio_i2s_usb_dma_init() {

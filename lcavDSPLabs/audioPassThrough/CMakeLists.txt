@@ -28,7 +28,7 @@ set(PICO_BOARD pico2_w CACHE STRING "Board type")
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
 
-project(audioPassThrough C CXX ASM)
+project(firmware_dsp C CXX ASM)
 
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
@@ -40,46 +40,43 @@ set(CMSISDSP "${CMAKE_CURRENT_LIST_DIR}/../CMSIS-DSP")
 add_subdirectory(${CMSISDSP}/Source bin_dsp)
 target_compile_options(CMSISDSP PRIVATE -Ofast -ffunction-sections -fdata-sections)
 
-# Add executable. Default name is the project name, version 0.1
+# Choose the lab to build
+set(LAB_ID 2 CACHE STRING "Selects the lab to build (1=PassThrough, 2=RobotEffects)")
 
-add_executable(audioPassThrough 
-        main.c
-        usb_descriptors.c
-        audio_usb.c
-        audio_i2s.c 
-        audio_proc.c
-        audio_bus.c
-    )
-add_dependencies(audioPassThrough CMSISDSP)
+# A library for all common code shared by all the labs
+add_executable(firmware_dsp
+    firmware_core/main.c
+    firmware_core/usb_descriptors.c
+    firmware_core/audio_usb.c
+    firmware_core/audio_i2s.c 
+    firmware_core/audio_bus.c
 
-pico_set_program_name(audioPassThrough "audioPassThrough")
-pico_set_program_version(audioPassThrough "0.1")
-
-# Generate PIO header
-pico_generate_pio_header(audioPassThrough ${CMAKE_CURRENT_LIST_DIR}/audioPassThrough.pio)
-
-# Add the standard library to the build
-target_link_libraries(audioPassThrough pico_stdlib)
-
-# Add the standard include files to the build
-target_include_directories(audioPassThrough PRIVATE
-        ${CMAKE_CURRENT_LIST_DIR}
-        ${CMAKE_CURRENT_LIST_DIR}/../CMSIS-DSP/Include
-        ${CMSISCORE}/Include
+    # The preprocessor will choose the write one
+    lab1_audioPassThrough/audio_proc.c
+    lab2_robotEffects/audio_proc.c
 )
 
-# Add any user requested libraries
-target_link_libraries(audioPassThrough 
-        hardware_dma
-        hardware_pio
-        pico_cyw43_arch_none
-        tinyusb_device
-        tinyusb_board
-        CMSISDSP
-    )
+# Generate PIO header
+pico_generate_pio_header(firmware_dsp ${CMAKE_CURRENT_LIST_DIR}/firmware_core/firmware_dsp.pio)
 
-pico_enable_stdio_uart(audioPassThrough 1)
-pico_enable_stdio_usb(audioPassThrough 0)
+target_link_libraries(firmware_dsp 
+    pico_stdlib
+    hardware_dma
+    hardware_pio
+    pico_cyw43_arch_none
+    tinyusb_device
+    tinyusb_board
+    CMSISDSP
+)
 
-pico_add_extra_outputs(audioPassThrough)
+target_compile_definitions(firmware_dsp PRIVATE LAB_ID=${LAB_ID})
+target_include_directories(firmware_dsp PUBLIC
+    ${CMAKE_CURRENT_LIST_DIR}/firmware_core
+    ${CMAKE_CURRENT_LIST_DIR}/../CMSIS-DSP/Include
+    ${CMSISCORE}/Include
+)
 
+pico_set_program_name(firmware_dsp "firmware_dsp Lab${LAB_ID}")
+pico_enable_stdio_uart(firmware_dsp 1)
+pico_enable_stdio_usb(firmware_dsp 0)
+pico_add_extra_outputs(firmware_dsp)
