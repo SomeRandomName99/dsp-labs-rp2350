@@ -34,12 +34,10 @@ static inline float rand_uniform(uint32_t *state) {
 static inline int32_t fast_lrintf_to_nearest(float f) {
   int32_t result;
   asm (
-    "vmov s0, %1\n"
-    "vcvtn.s32.f32 s0, s0\n"
-    "vmov %0, s0\n"
+    "vcvtn.s32.f32 %1, %1\n"
+    "vmov %0, %1\n"
     :"=r"(result)
-    :"r"(f)
-    :"s0"
+    :"w"(f)
   );
   return result;
 }
