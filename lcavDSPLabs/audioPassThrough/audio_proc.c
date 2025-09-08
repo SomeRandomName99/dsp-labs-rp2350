@@ -1,3 +1,5 @@
+#include <math.h>
+
 #include "arm_math.h"
 
 #include "audio_usb.h"
@@ -93,9 +95,7 @@ void audio_process(){
 
   // Signal Conditioning
   arm_fir_f32(&fir_dc_removal_instance, processing_buf1, processing_buf2, BLOCK_SIZE);
-  float32_t volume_difference = audio_volume_multiplier - 1.0f;
-  arm_abs_f32(&volume_difference, &volume_difference, 1);
-  if(volume_difference < 0.001f){
+  if(fabsf(audio_volume_multiplier - 1.0f) > 0.001f){
     arm_scale_f32(processing_buf2, audio_volume_multiplier, processing_buf2, BLOCK_SIZE);
   }
 
