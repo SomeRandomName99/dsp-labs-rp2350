@@ -1,16 +1,16 @@
 #include "arm_math.h"
 
-#include "audio_bus.h"
 #include "audio_usb.h"
+#include "audio_bus.h"
 
 /* Constants and Macros */
 #define BLOCK_SIZE AUDIO_PACKET_SAMPLES
 #define NUM_TAPS 2
 
 // https://arm-software.github.io/CMSIS-DSP/latest/group__FIR.html
-static float32_t fir_coeffs[NUM_TAPS] = {-1.0f, 1.0f};
-static float32_t fir_state[NUM_TAPS*BLOCK_SIZE-1];
-static arm_fir_instance_f32 fir_instance;
+static float32_t fir_dc_removal_coeffs[NUM_TAPS] = {-1.0f, 1.0f};
+static float32_t fir_dc_removal_state[NUM_TAPS*BLOCK_SIZE-1];
+static arm_fir_instance_f32 fir_dc_removal_instance;
 
 /* Private Helper Functions */
 
@@ -69,7 +69,7 @@ static void audio_process_mute() {
 
 /* Public Functions */
 void audio_proc_init() {
-  arm_fir_init_f32(&fir_instance, NUM_TAPS, fir_coeffs, fir_state, BLOCK_SIZE);
+  arm_fir_init_f32(&fir_dc_removal_instance, NUM_TAPS, fir_dc_removal_coeffs, fir_dc_removal_state, BLOCK_SIZE);
 }
 
 void audio_process(){
@@ -91,7 +91,8 @@ void audio_process(){
   }
   rb_increase_read_index(&g_i2s_to_proc_buffer);
 
-  arm_fir_f32(&fir_instance, processing_buf1, processing_buf2, BLOCK_SIZE);
+  // Signal Conditioning
+  arm_fir_f32(&fir_dc_removal_instance, processing_buf1, processing_buf2, BLOCK_SIZE);
   float32_t volume_difference = audio_volume_multiplier - 1.0f;
   arm_abs_f32(&volume_difference, &volume_difference, 1);
   if(volume_difference < 0.001f){
