@@ -8,11 +8,18 @@
 /* Constants and Macros */
 #define BLOCK_SIZE AUDIO_PACKET_SAMPLES
 #define NUM_TAPS 2
+#define SINE_TABLE_SIZE 2048
+#define SINE_FREQUENCY 200.0f 
+#define NORMALIZED_SINE_FREQUENCY (SINE_FREQUENCY / SAMPLE_RATE)
+#define PHASE_INCREMENT (float32_t)(SINE_TABLE_SIZE * NORMALIZED_SINE_FREQUENCY)
 
+/* State Variables */
 // https://arm-software.github.io/CMSIS-DSP/latest/group__FIR.html
 static float32_t fir_dc_removal_coeffs[NUM_TAPS] = {-1.0f, 1.0f};
 static float32_t fir_dc_removal_state[NUM_TAPS*BLOCK_SIZE-1];
 static arm_fir_instance_f32 fir_dc_removal_instance;
+
+static float32_t sine_table[SINE_TABLE_SIZE];
 
 /* Private Helper Functions */
 
@@ -67,10 +74,17 @@ static inline void audio_process_mute() {
   rb_increase_write_index(&g_proc_to_usb_buffer);
 }
 
+static inline void create_sine_table(float *table, int size) {
+  for (int i = 0; i < size; i++) {
+    table[i] = sinf((2.0f * M_PI * i) / size);
+  }
+}
+
 /* Public Functions */
 #if LAB_ID == 2
 
 void audio_proc_init() {
+  create_sine_table(sine_table, SINE_TABLE_SIZE);
   arm_fir_init_f32(&fir_dc_removal_instance, NUM_TAPS, fir_dc_removal_coeffs, fir_dc_removal_state, BLOCK_SIZE);
 }
 
@@ -84,6 +98,8 @@ void audio_process(){
   // Two buffers are needed because CMSIS-DSP filter functions are not inplace
   static float processing_buf1[AUDIO_PACKET_SAMPLES];
   static float processing_buf2[AUDIO_PACKET_SAMPLES];
+  static float interpolated_sine_buf[AUDIO_PACKET_SAMPLES];
+  static float32_t phase = 0.0f;
 
   int16_t *audio_buf = (int16_t *) rb_get_read_buffer(&g_i2s_to_proc_buffer);
   int16_t *usb_buf   = (int16_t *) rb_get_write_buffer(&g_proc_to_usb_buffer);
@@ -96,8 +112,23 @@ void audio_process(){
   // Signal Conditioning
   arm_fir_f32(&fir_dc_removal_instance, processing_buf1, processing_buf2, BLOCK_SIZE);
   if(fabsf(audio_volume_multiplier - 1.0f) > 0.001f){
-    arm_scale_f32(processing_buf2, audio_volume_multiplier, processing_buf2, BLOCK_SIZE);
+    arm_scale_f32(processing_buf2, audio_volume_multiplier*10, processing_buf2, BLOCK_SIZE);
   }
+
+  for(int i = 0; i < AUDIO_PACKET_SAMPLES; i++){
+    uint32_t int_index = (uint32_t)phase;
+    float difference = phase - (float32_t)int_index;
+
+    float y0 = sine_table[int_index];
+    float y1 = sine_table[(int_index + 1) % SINE_TABLE_SIZE];
+    interpolated_sine_buf[i] = y0 + difference * (y1 - y0);
+
+    phase += PHASE_INCREMENT;
+    if(phase >= SINE_TABLE_SIZE){
+      phase -= SINE_TABLE_SIZE;
+    }
+  }
+  arm_mult_f32(processing_buf2, interpolated_sine_buf, processing_buf2, BLOCK_SIZE);
 
   for(int i = 0; i < AUDIO_PACKET_SAMPLES; i++){
     usb_buf[i] = float_to_pcm16_dither(processing_buf2[i], &rng_state);
