@@ -14,8 +14,8 @@ I might add support to it again if I ever find it.
 
 # Project checklist
 - [X] USB audio passthrough (Also has DC Filtering and Mute and Volume controls)
-- [ ] Alien voice effect (Currently work in progress)
-- [ ] Digital filter design
+- [x] Alien voice effect 
+- [ ] Digital filter design (Currently taking a deep dive into filtering using 6.341x and EPFL DSP Specialization on coursera)
 - [ ] Granular synthesis
 - [ ] Linear prediction
 - [ ] DFT pitch shifting
