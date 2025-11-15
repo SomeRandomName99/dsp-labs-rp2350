@@ -8,7 +8,7 @@ Another difference is that I will be using usb to transmit audio data because I 
 
 # Project checklist
 - [X] USB audio passthrough (Also has DC Filtering and Mute and Volume controls) [Lab learnings](lcavDSPLabs/audioPassThrough/lab1_audioPassThrough/Lab1Learning.md)
-- [x] Alien voice effect 
+- [x] Alien voice effect [Lab learnings](lcavDSPLabs/audioPassThrough/lab2_robotEffects/Lab2Learning.md)
 - [ ] Digital filter design (Currently taking a deep dive into filtering using 6.341x and EPFL DSP Specialization on coursera)
 - [ ] Granular synthesis
 - [ ] Linear prediction
