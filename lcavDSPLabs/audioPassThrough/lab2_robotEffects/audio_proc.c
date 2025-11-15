@@ -8,7 +8,7 @@
 /* Constants and Macros */
 #define BLOCK_SIZE AUDIO_PACKET_SAMPLES
 #define NUM_TAPS 2
-#define SINE_TABLE_SIZE 2048
+#define SINE_TABLE_SIZE 2048 // Must be a power of 2 for fast modulo boundary check
 #define SINE_FREQUENCY 1000.0f 
 #define NORMALIZED_SINE_FREQUENCY (SINE_FREQUENCY / SAMPLE_RATE)
 #define PHASE_INCREMENT (float32_t)(SINE_TABLE_SIZE * NORMALIZED_SINE_FREQUENCY)
