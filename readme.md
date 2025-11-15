@@ -1,10 +1,9 @@
 # Introduction
-This project serves my introduction to DSP in general and real time signal processing in particular. The project will follow the [labs from EPFL's COM303 course]
-(https://lcav.gitbook.io/dsp-labs/) which is very similar to their Coursera offering.
-
+This project serves my introduction to DSP in general and real time signal processing in particular. The project will 
+follow the [labs from EPFL's COM303 course](https://lcav.gitbook.io/dsp-labs/) which is very similar to their Coursera 
+offering.
 # Differences
-For these sets of projects, I have decided to use another microcontroller, namely the [Raspberry Pi Pico 2 W]
-(https://www.raspberrypi.com/documentation/microcontrollers/pico-series.html). Mainly because it has a built in 
+For these sets of projects, I have decided to use another microcontroller, namely the [Raspberry Pi Pico 2 W](https://www.raspberrypi.com/documentation/microcontrollers/pico-series.html). Mainly because it has a built in 
 DSP unit which can speed things up and pave the way to more elaborate projects(more on that soon). This of course comes with its own set of difficulties, since
 all of the starter code/project setup info needs to be done from scratch. But It should be worth it since I am very interested in trying a programmable I/O,
 multicore progeramming on an MCU, and built in DSP cores.
