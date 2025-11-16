@@ -41,7 +41,7 @@ add_subdirectory(${CMSISDSP}/Source bin_dsp)
 target_compile_options(CMSISDSP PRIVATE -Ofast -ffunction-sections -fdata-sections)
 
 # Choose the lab to build
-set(LAB_ID 2 CACHE STRING "Selects the lab to build (1=PassThrough, 2=RobotEffects)")
+set(LAB_ID 3 CACHE STRING "Selects the lab to build (1=PassThrough, 2=RobotEffects)")
 
 # A library for all common code shared by all the labs
 add_executable(firmware_dsp
@@ -54,6 +54,7 @@ add_executable(firmware_dsp
     # The preprocessor will choose the write one
     lab1_audioPassThrough/audio_proc.c
     lab2_robotEffects/audio_proc.c
+    lab3_digitalFilterDesign/audio_proc.c
 )
 
 # Generate PIO header
