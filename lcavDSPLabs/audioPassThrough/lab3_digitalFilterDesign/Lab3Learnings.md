@@ -6,4 +6,4 @@ After the deep dive was done, I was well-equipped to tackle this design problem,
 
 The final two contenders were a 2nd Order Butterworth filter I designed with scipy and a leaky integrator with the pole very close to the unit circle. Apparently the filter performance is very sensitive to the location of the pole, so it might be better to use the Butterworth filter when using fixed point arithmetic. Although the Butterworth filter had much better attenuation(as seen the picture above), it has a worse frequency response. I suspect that both would have fared just fine, since the non-linearity is pushed very close to the low end of the range(Check the next picture).
 
-![Comparison of the phase of the frequency response of the different filters](/images/PhaseFreqResp.pnd)
+![Comparison of the phase of the frequency response of the different filters](images/PhaseFreqResp.png)
