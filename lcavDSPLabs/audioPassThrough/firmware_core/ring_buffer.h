@@ -26,11 +26,11 @@ typedef struct {
     .buffer = _rb_buffer_##name \
   }
 
-#define rb_init_static(name, num_elements, type) \
-  _rb_init(static, name, num_elements, type)
+#define rb_init_static(name, num_elements, size_of_element) \
+  _rb_init(static, name, num_elements, size_of_element)
 
-#define rb_init_shared(name, num_elements, type) \
-  _rb_init(/* no linkage */, name, num_elements, type)
+#define rb_init_shared(name, num_elements, size_of_element) \
+  _rb_init(/* no linkage */, name, num_elements, size_of_element)
 
 /* Public Functions */
 static inline uint16_t circular_increment(ring_buffer_t *rb, uint16_t index){
