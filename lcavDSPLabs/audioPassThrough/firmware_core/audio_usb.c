@@ -31,7 +31,7 @@ void audio_task(void) {
     while(!rb_is_empty(&g_proc_to_usb_buffer)){
       uint8_t *buffer = (uint8_t *) rb_get_read_buffer(&g_proc_to_usb_buffer);
       tud_audio_write(buffer, AUDIO_PACKET_SIZE);
-      rb_increase_read_index(&g_proc_to_usb_buffer);
+      rb_increment_read_index(&g_proc_to_usb_buffer);
     }
   }
 }

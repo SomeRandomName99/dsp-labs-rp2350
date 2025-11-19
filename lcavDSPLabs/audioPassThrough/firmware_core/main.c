@@ -38,7 +38,9 @@ int main() {
   while(1){
     tud_task();
     if(!rb_is_empty(&g_i2s_to_proc_buffer) && !rb_is_full(&g_proc_to_usb_buffer)){
+      gpio_put(DBG_LOOP_PIN, 1);
       audio_process();
+      gpio_put(DBG_LOOP_PIN, 0);
     }
     audio_task();
     toggleLED();

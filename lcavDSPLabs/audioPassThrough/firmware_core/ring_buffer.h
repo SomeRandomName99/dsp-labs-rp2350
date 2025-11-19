@@ -9,7 +9,7 @@ typedef struct {
   volatile uint16_t tail;
   const uint16_t capacity;
   const uint16_t element_size;
-  uint8_t * const buffer; 
+  uint8_t* const buffer; 
 } ring_buffer_t;
 
 /* Constants and Macros */
@@ -46,24 +46,47 @@ static inline bool rb_is_empty(ring_buffer_t *rb) {
   return rb->head == rb->tail;
 }
 
-static inline uint8_t * rb_get_write_buffer(ring_buffer_t *rb) {
+static inline uint8_t* rb_get_write_buffer(ring_buffer_t *rb) {
   assert(!rb_is_full(rb));
   return &rb->buffer[rb->head * rb->element_size];
 }
 
-static inline void rb_increase_write_index(ring_buffer_t *rb) {
+static inline void rb_increment_write_index(ring_buffer_t *rb) {
   assert(!rb_is_full(rb));
   rb->head = circular_increment(rb, rb->head);
 }
 
-static inline uint8_t * rb_get_read_buffer(ring_buffer_t *rb) {
+static inline uint8_t* rb_get_read_buffer(ring_buffer_t *rb) {
   assert(!rb_is_empty(rb));
   return &rb->buffer[rb->tail * rb->element_size];
 }
 
-static inline void rb_increase_read_index(ring_buffer_t *rb) {
+static inline void rb_increment_read_index(ring_buffer_t *rb) {
   assert(!rb_is_empty(rb));
   rb->tail = circular_increment(rb, rb->tail);
+}
+
+static inline void rb_increase_read_index(ring_buffer_t *rb, uint16_t count) {
+  uint16_t new_index = rb->tail + count;
+  if(new_index >= rb->capacity) {
+    new_index -= rb->capacity;
+  }
+  assert(new_index <= rb->head);
+  rb->tail = new_index;
+}
+
+static inline uint8_t* rb_read_at_index(ring_buffer_t *rb, uint16_t index) {
+  assert(index < rb->capacity);
+  uint16_t read_index = rb->tail + index;
+  if(read_index >= rb->capacity) {
+    read_index -= rb->capacity;
+  }
+  return &rb->buffer[read_index * rb->element_size];
+}
+
+static inline void rb_reset(ring_buffer_t *rb) {
+  rb->head = 0;
+  rb->tail = 0;
 }
 
 #endif // RING_BUFFER_H

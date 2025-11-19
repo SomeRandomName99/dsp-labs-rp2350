@@ -21,7 +21,7 @@ void dma_handler() {
   dma_hw->ints0 = 1u << dma_data_chan;
 
   void *next_buf = rb_get_write_buffer(&g_i2s_to_proc_buffer);
-  rb_increase_write_index(&g_i2s_to_proc_buffer);
+  rb_increment_write_index(&g_i2s_to_proc_buffer);
   bool trigger = true;
   dma_channel_set_write_addr(dma_data_chan, next_buf, trigger);
 }
@@ -49,7 +49,7 @@ void audio_i2s_usb_dma_init() {
 
   bool trigger = true;
   void *write_buf = rb_get_write_buffer(&g_i2s_to_proc_buffer);
-  rb_increase_write_index(&g_i2s_to_proc_buffer);
+  rb_increment_write_index(&g_i2s_to_proc_buffer);
   dma_channel_configure(dma_data_chan, &c,
     write_buf,
     &pio0_hw->rxf[sm],

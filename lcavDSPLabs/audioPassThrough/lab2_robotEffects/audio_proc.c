@@ -68,10 +68,10 @@ static inline float pcm16_to_float(int16_t x) {
 }
 
 static inline void audio_process_mute() {
-  rb_increase_read_index(&g_i2s_to_proc_buffer);
+  rb_increment_read_index(&g_i2s_to_proc_buffer);
   int16_t *usb_buf   = (int16_t *) rb_get_write_buffer(&g_proc_to_usb_buffer);
   memset(usb_buf, 0, AUDIO_PACKET_SIZE);
-  rb_increase_write_index(&g_proc_to_usb_buffer);
+  rb_increment_write_index(&g_proc_to_usb_buffer);
 }
 
 static inline void create_sine_table(float *table, int size) {
@@ -107,7 +107,7 @@ void audio_process(){
   for(int i = 0; i < AUDIO_PACKET_SAMPLES; i++){
     processing_buf1[i] = pcm16_to_float(audio_buf[i]);
   }
-  rb_increase_read_index(&g_i2s_to_proc_buffer);
+  rb_increment_read_index(&g_i2s_to_proc_buffer);
 
   // Signal Conditioning
   arm_fir_f32(&fir_dc_removal_instance, processing_buf1, processing_buf2, BLOCK_SIZE);
@@ -133,6 +133,6 @@ void audio_process(){
   for(int i = 0; i < AUDIO_PACKET_SAMPLES; i++){
     usb_buf[i] = float_to_pcm16_dither(processing_buf2[i], &rng_state);
   }
-  rb_increase_write_index(&g_proc_to_usb_buffer);
+  rb_increment_write_index(&g_proc_to_usb_buffer);
 }
 #endif // LAB_ID == 2
