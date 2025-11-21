@@ -43,18 +43,13 @@ target_compile_options(CMSISDSP PRIVATE -Ofast -ffunction-sections -fdata-sectio
 # Choose the lab to build
 set(LAB_ID 4 CACHE STRING "Selects the lab to build (1=PassThrough, 2=RobotEffects)")
 
-if(LAB_ID EQUAL 4)
-    set(CORE_DIR "lab4_granularSynthesis/firmware_core")
-else()
-    set(CORE_DIR "firmware_core")
-endif()
 # A library for all common code shared by all the labs
 add_executable(firmware_dsp
-    ${CORE_DIR}/main.c
-    ${CORE_DIR}/usb_descriptors.c
-    ${CORE_DIR}/audio_usb.c
-    ${CORE_DIR}/audio_i2s.c 
-    ${CORE_DIR}/audio_bus.c
+    firmware_core/main.c
+    firmware_core/usb_descriptors.c
+    firmware_core/audio_usb.c
+    firmware_core/audio_i2s.c 
+    firmware_core/audio_bus.c
 
     # The preprocessor will choose the write one
     lab1_audioPassThrough/audio_proc.c
@@ -64,7 +59,7 @@ add_executable(firmware_dsp
 )
 
 # Generate PIO header
-pico_generate_pio_header(firmware_dsp ${CMAKE_CURRENT_LIST_DIR}/${CORE_DIR}/firmware_dsp.pio)
+pico_generate_pio_header(firmware_dsp ${CMAKE_CURRENT_LIST_DIR}/firmware_core/firmware_dsp.pio)
 
 target_link_libraries(firmware_dsp 
     pico_stdlib
@@ -78,7 +73,7 @@ target_link_libraries(firmware_dsp
 
 target_compile_definitions(firmware_dsp PRIVATE LAB_ID=${LAB_ID})
 target_include_directories(firmware_dsp PUBLIC
-    ${CMAKE_CURRENT_LIST_DIR}/${CORE_DIR}
+    ${CMAKE_CURRENT_LIST_DIR}/firmware_core
     ${CMAKE_CURRENT_LIST_DIR}/../CMSIS-DSP/Include
     ${CMSISCORE}/Include
 )
