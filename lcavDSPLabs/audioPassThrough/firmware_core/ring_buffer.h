@@ -64,6 +64,16 @@ static inline void rb_increment_write_index(ring_buffer_t *rb) {
   rb->write_index++;
 }
 
+static inline void rb_increase_write_index(ring_buffer_t *rb, uint16_t count) {
+  assert((size(rb) + count) <= rb->capacity);
+  rb->write_index += count;
+}
+
+static inline uint16_t rb_get_num_contiguous_writes(ring_buffer_t *rb) {
+  uint16_t write_index = rb->write_index & (rb->capacity - 1);
+  return rb->capacity - write_index;
+}
+
 static inline uint8_t* rb_get_read_buffer(ring_buffer_t *rb) {
   assert(!rb_is_empty(rb));
   uint8_t read_index = rb->read_index & (rb->capacity - 1);
