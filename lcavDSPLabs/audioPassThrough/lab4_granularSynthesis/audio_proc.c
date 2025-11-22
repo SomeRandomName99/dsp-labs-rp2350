@@ -32,7 +32,7 @@ static arm_biquad_cascade_df2T_instance_f32 iir_dc_block_instance = {
 static float32_t taper_window[GRAIN_LEN_SAMPLES]; // 4KB
 static uint16_t interpolation_indices[GRAIN_LEN_SAMPLES]; // 2KB
 static float32_t interpolation_amps[GRAIN_LEN_SAMPLES]; // 4KB
-static float32_t grain_overlap[OVERLAP_LEN]; // 0.4KB
+static float32_t grain_overlap[OVERLAP_LEN] = {0}; // 0.4KB
 rb_init_static(x_concat, (1 << 11), sizeof(float32_t)); // 8KB Supports grains of up to 42ms
 rb_init_static(output_fifo, (1 << 11), sizeof(float32_t)); // 8KB
 
@@ -93,17 +93,16 @@ static inline void write_to_ring_buffer_with_dma(ring_buffer_t *rb, float32_t *d
     );
     dma_channel_wait_for_finish_blocking(dma_data_chan);
     rb_increase_write_index(rb, num_writes_before_wrap);
-    uint16_t num_writes_remaining = length - num_writes_before_wrap;
     dma_channel_configure(
       dma_data_chan,
       &dma_config,
       rb_get_write_buffer(rb),               
       &data[num_writes_before_wrap],     
-      num_writes_remaining,         
+      length - num_writes_before_wrap,         
       true                                      
     );
     dma_channel_wait_for_finish_blocking(dma_data_chan);
-    rb_increase_write_index(rb, num_writes_remaining);
+    rb_increase_write_index(rb, length - num_writes_before_wrap);
   } else {
     dma_channel_configure(
       dma_data_chan,
@@ -125,7 +124,7 @@ void audio_proc_init() {
   arm_biquad_cascade_df2T_init_f32(&iir_dc_block_instance, 1, iir_dc_block_coeffs, iir_dc_block_state);
 
   // Create trapezoidal taper window
-  uint32_t single_edge_overlap_len = OVERLAP_LEN / 2;
+  uint32_t single_edge_overlap_len = OVERLAP_LEN;
   for(int i = 0; i < GRAIN_LEN_SAMPLES; i++){
     if(i < single_edge_overlap_len){
       taper_window[i] = (float)i / single_edge_overlap_len;
@@ -181,43 +180,35 @@ void audio_process(){
   if(size(&x_concat) >= GRAIN_LEN_SAMPLES){
     gpio_put(15, 1);
     for(int i = 0; i < GRAIN_LEN_SAMPLES; i++){
-      const uint16_t idx = interpolation_indices[i];
-      const float32_t amp = interpolation_amps[i];
-      const float32_t x0 = *((float32_t*)rb_read_at_index(&x_concat, idx));
-      const float32_t x1 = *((float32_t*)rb_read_at_index(&x_concat, idx + 1));
-      temp_grain_buf[i] = x0 * (1.0f - amp) + x1 * amp;
+      const uint16_t interp_idx = interpolation_indices[i];
+      const float32_t interp_amp = interpolation_amps[i];
+      const float32_t x0 = *((float32_t*)rb_read_at_index(&x_concat, interp_idx));
+      const float32_t x1 = *((float32_t*)rb_read_at_index(&x_concat, interp_idx + 1));
+      temp_grain_buf[i] = x0 * (1.0f - interp_amp) + x1 * interp_amp;
     }
     arm_mult_f32(temp_grain_buf, taper_window, temp_grain_buf, GRAIN_LEN_SAMPLES);
     arm_add_f32(temp_grain_buf, grain_overlap, temp_grain_buf, OVERLAP_LEN);
-    memcpy(grain_overlap, &temp_grain_buf[GRAIN_LEN_SAMPLES - OVERLAP_LEN], OVERLAP_LEN * sizeof(float32_t));
+    memcpy(grain_overlap, &temp_grain_buf[STRIDE_SAMPLES], OVERLAP_LEN * sizeof(float32_t));
     write_to_ring_buffer_with_dma(&output_fifo, temp_grain_buf, STRIDE_SAMPLES);
-    if(size(&output_fifo)%48 != 0){
-      __breakpoint();
-    }
     rb_increase_read_index(&x_concat, STRIDE_SAMPLES);
     gpio_put(15, 0);
   }
 
-  static volatile bool was_true = false;
   if(size(&output_fifo) >= BLOCK_SIZE){
     for(int i = 0; i < BLOCK_SIZE; i++){
       float32_t *output_read = (float32_t *)rb_get_read_buffer(&output_fifo);
       processing_buf2[i] = *output_read;
       rb_increment_read_index(&output_fifo);
     }
-    was_true = true;
   } else {
     memset(processing_buf2, 0, BLOCK_SIZE * sizeof(float32_t)); 
-    if(was_true){
-      volatile uint16_t sz = size(&output_fifo);
-      __breakpoint();
-    }
   }
 
   // Prepare signal for USB transmission
   if(fabsf(audio_volume_multiplier - 1.0f) > 0.001f){
     arm_scale_f32(processing_buf2, audio_volume_multiplier*10, processing_buf2, BLOCK_SIZE);
   }
+  arm_clip_f32(processing_buf2, processing_buf2, -1.0f, 1.0f, BLOCK_SIZE);
   for(int i = 0; i < AUDIO_PACKET_SAMPLES; i++){
     usb_buf[i] = float_to_pcm16_dither(processing_buf2[i], &rng_state);
   }
