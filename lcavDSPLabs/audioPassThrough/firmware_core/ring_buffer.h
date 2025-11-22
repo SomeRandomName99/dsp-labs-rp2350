@@ -3,8 +3,17 @@
 
 #include "pico/stdlib.h"
 
-/* A single-producer single-consumer ring buffer implementation
+/* 
+A single-producer single-consumer ring buffer implementation
+
+A power of 2 number of elements is a must for fast circular increment and 
+being able to use all of the capacity 
+
+In order to be able to differentiate between full and empty, the last bit
+in the index will be used for that purpose. Hence the maximum allowed capacity
+2^(m - 1) where m is the number of bits of the index variables.
 */
+
 typedef struct {
   volatile uint16_t write_index;
   volatile uint16_t read_index;
@@ -14,14 +23,8 @@ typedef struct {
 } ring_buffer_t;
 
 /* Constants and Macros */
-
-// Internal implemetation macro that is used to avoid code duplication.
 // Use the definition below
-  /* A power of 2 number of elements is a must for fast circular increment and 
-  being able to use all of the capacity */ 
-  /* In order to be able to differentiate between full and empty, the last bit
-  in the index will be used for that purpose. Hence the maximum allowed capacity
-  is one less than the maximum power of two of the index variable */ 
+// Internal implementation macro that is used to avoid code duplication.
 #define _rb_init(linkage, name, num_elements, size_of_element) \
   static_assert((num_elements > 0) && ((num_elements & (num_elements - 1)) == 0)); \
   static_assert(num_elements <= (1 << 15));\
@@ -76,7 +79,7 @@ static inline uint16_t rb_get_num_contiguous_writes(ring_buffer_t *rb) {
 
 static inline uint8_t* rb_get_read_buffer(ring_buffer_t *rb) {
   assert(!rb_is_empty(rb));
-  uint8_t read_index = rb->read_index & (rb->capacity - 1);
+  uint16_t read_index = rb->read_index & (rb->capacity - 1);
   return &rb->buffer[read_index * rb->element_size];
 }
 
