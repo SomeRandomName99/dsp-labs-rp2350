@@ -55,7 +55,7 @@ static inline bool rb_is_empty(ring_buffer_t *rb) {
 
 static inline uint8_t* rb_get_write_buffer(ring_buffer_t *rb) {
   assert(!rb_is_full(rb));
-  uint8_t write_index = rb->write_index & (rb->capacity - 1);
+  uint16_t write_index = rb->write_index & (rb->capacity - 1);
   return &rb->buffer[write_index * rb->element_size];
 }
 
