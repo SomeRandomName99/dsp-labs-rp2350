@@ -188,6 +188,7 @@ void audio_process(){
     }
     arm_mult_f32(temp_grain_buf, taper_window, temp_grain_buf, GRAIN_LEN_SAMPLES);
     arm_add_f32(temp_grain_buf, grain_overlap, temp_grain_buf, OVERLAP_LEN);
+    asm volatile("" ::: "memory");
     memcpy(grain_overlap, &temp_grain_buf[STRIDE_SAMPLES], OVERLAP_LEN * sizeof(float32_t));
     write_to_ring_buffer_with_dma(&output_fifo, temp_grain_buf, STRIDE_SAMPLES);
     rb_increase_read_index(&x_concat, STRIDE_SAMPLES);
