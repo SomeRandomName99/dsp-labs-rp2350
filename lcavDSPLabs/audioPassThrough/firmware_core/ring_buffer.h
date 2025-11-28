@@ -23,7 +23,6 @@ typedef struct {
 } ring_buffer_t;
 
 /* Constants and Macros */
-// Use the definition below
 // Internal implementation macro that is used to avoid code duplication.
 #define _rb_init(linkage, name, num_elements, size_of_element) \
   static_assert((num_elements > 0) && ((num_elements & (num_elements - 1)) == 0)); \

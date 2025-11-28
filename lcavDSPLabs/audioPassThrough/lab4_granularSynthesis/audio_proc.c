@@ -10,12 +10,12 @@
 /* Constants and Macros */
 #define BLOCK_SIZE AUDIO_PACKET_SAMPLES
 #define GRAIN_LEN_MS 20
-#define STRIDE_MS 15
-#define PITCH_SHIFT_FACTOR 0.7f
+#define STRIDE_MS 17
+#define PITCH_SHIFT_FACTOR 0.6f 
 #define GRAIN_LEN_SAMPLES (AUDIO_SAMPLES_PER_MS * GRAIN_LEN_MS)
 #define STRIDE_SAMPLES (AUDIO_SAMPLES_PER_MS * STRIDE_MS)
-#define OVERLAP_LEN (GRAIN_LEN_SAMPLES - STRIDE_SAMPLES)
-
+#define OVERLAP_LEN (GRAIN_LEN_SAMPLES - STRIDE_SAMPLES - 1)
+ 
 /* State Variables */
 // https://arm-software.github.io/CMSIS-DSP/latest/group__BiquadCascadeDF2T.html
 static float32_t iir_dc_block_coeffs[5] = {
@@ -124,7 +124,7 @@ void audio_proc_init() {
   arm_biquad_cascade_df2T_init_f32(&iir_dc_block_instance, 1, iir_dc_block_coeffs, iir_dc_block_state);
 
   // Create trapezoidal taper window
-  uint32_t single_edge_overlap_len = OVERLAP_LEN;
+  uint32_t single_edge_overlap_len = GRAIN_LEN_SAMPLES - STRIDE_SAMPLES - 1;
   for(int i = 0; i < GRAIN_LEN_SAMPLES; i++){
     if(i < single_edge_overlap_len){
       taper_window[i] = (float)i / single_edge_overlap_len;
@@ -196,8 +196,7 @@ void audio_process(){
 
   if(size(&output_fifo) >= BLOCK_SIZE){
     for(int i = 0; i < BLOCK_SIZE; i++){
-      float32_t *output_read = (float32_t *)rb_get_read_buffer(&output_fifo);
-      processing_buf2[i] = *output_read;
+      processing_buf2[i] = *((float32_t *)rb_get_read_buffer(&output_fifo));
       rb_increment_read_index(&output_fifo);
     }
   } else {
