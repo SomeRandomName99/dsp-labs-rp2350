@@ -10,7 +10,7 @@ Another difference is that I will be using usb to transmit audio data because I 
 - [X] USB audio passthrough (Also has DC Filtering and Mute and Volume controls) [Lab learnings](lcavDSPLabs/audioPassThrough/lab1_audioPassThrough/Lab1Learnings.md)
 - [x] Alien voice effect [Lab learnings](lcavDSPLabs/audioPassThrough/lab2_robotEffects/Lab2Learnings.md)
 - [x] Digital filter design (Currently taking a deep dive into filtering using 6.341x and EPFL DSP Specialization on coursera) [Lab learnings](lcavDSPLabs/audioPassThrough/lab3_digitalFilterDesign/Lab3Learnings.md)
-- [ ] Granular synthesis
+- [x] Granular synthesis [Lab learnings](lcavDSPLabs/audioPassThrough/lab4_granularSynthesis/Lab4Learnings.md)
 - [ ] Linear prediction
 - [ ] DFT pitch shifting
 
