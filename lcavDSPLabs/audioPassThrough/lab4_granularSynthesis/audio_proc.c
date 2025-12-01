@@ -68,11 +68,12 @@ static inline int16_t float_to_pcm16_dither(float x, uint32_t *rng_state) {
 
   // round to the nearest integer using 1 hardware instruction
   int32_t result;
+  float32_t scaled_x = x * 32767.0f; // we scale back to full range PCM16 here
   asm (
     "vcvtn.s32.f32 %1, %1\n"
     "vmov %0, %1\n"
-    :"=r"(result)
-    :"w"(x * 32767.0f) // we scale back to full range PCM16 here
+    :"=r"(result), "+w"(scaled_x)
+    :
   );
   return result;
 
@@ -156,7 +157,9 @@ void audio_process(){
     int16_t *usb_buf = (int16_t *) rb_get_write_buffer(&g_proc_to_usb_buffer);
     memset(usb_buf, 0, AUDIO_PACKET_SIZE);
     rb_increment_write_index(&g_proc_to_usb_buffer);
-    // TODO: Need to think about handling granular synthesis when muting
+    rb_reset(&x_concat);
+    rb_reset(&output_fifo);
+    memset(grain_overlap, 0, OVERLAP_LEN * sizeof(float32_t));
     return;
   }
 
@@ -188,7 +191,6 @@ void audio_process(){
     }
     arm_mult_f32(temp_grain_buf, taper_window, temp_grain_buf, GRAIN_LEN_SAMPLES);
     arm_add_f32(temp_grain_buf, grain_overlap, temp_grain_buf, OVERLAP_LEN);
-    asm volatile("" ::: "memory");
     memcpy(grain_overlap, &temp_grain_buf[STRIDE_SAMPLES], OVERLAP_LEN * sizeof(float32_t));
     write_to_ring_buffer_with_dma(&output_fifo, temp_grain_buf, STRIDE_SAMPLES);
     rb_increase_read_index(&x_concat, STRIDE_SAMPLES);
