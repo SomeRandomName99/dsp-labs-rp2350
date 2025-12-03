@@ -81,7 +81,6 @@ static inline void create_sine_table(float *table, int size) {
 }
 
 /* Public Functions */
-#if LAB_ID == 2
 
 void audio_proc_init() {
   create_sine_table(sine_table, SINE_TABLE_SIZE);
@@ -135,4 +134,3 @@ void audio_process(){
   }
   rb_increment_write_index(&g_proc_to_usb_buffer);
 }
-#endif // LAB_ID == 2

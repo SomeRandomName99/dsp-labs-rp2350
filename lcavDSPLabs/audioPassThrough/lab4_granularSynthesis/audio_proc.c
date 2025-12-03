@@ -119,7 +119,6 @@ static inline void write_to_ring_buffer_with_dma(ring_buffer_t *rb, float32_t *d
 }
 
 /* Public Functions */
-#if LAB_ID == 4
 
 void audio_proc_init() {
   arm_biquad_cascade_df2T_init_f32(&iir_dc_block_instance, 1, iir_dc_block_coeffs, iir_dc_block_state);
@@ -216,4 +215,3 @@ void audio_process(){
   }
   rb_increment_write_index(&g_proc_to_usb_buffer);
 }
-#endif // LAB_ID == 4

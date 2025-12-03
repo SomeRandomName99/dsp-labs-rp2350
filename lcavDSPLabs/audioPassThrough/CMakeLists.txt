@@ -43,6 +43,18 @@ target_compile_options(CMSISDSP PRIVATE -Ofast -ffunction-sections -fdata-sectio
 # Choose the lab to build
 set(LAB_ID 4 CACHE STRING "Selects the lab to build (1=PassThrough, 2=RobotEffects)")
 
+if(LAB_ID EQUAL 1)
+    set(LAB_SRC lab1_audioPassThrough/audio_proc.c)
+elseif(LAB_ID EQUAL 2)
+    set(LAB_SRC lab2_robotEffects/audio_proc.c)
+elseif(LAB_ID EQUAL 3)
+    set(LAB_SRC lab3_digitalFilterDesign/audio_proc.c)
+elseif(LAB_ID EQUAL 4)
+    set(LAB_SRC lab4_granularSynthesis/audio_proc.c)
+else()
+    message(FATAL_ERROR "Invalid LAB_ID: ${LAB_ID}")
+endif()
+
 # A library for all common code shared by all the labs
 add_executable(firmware_dsp
     firmware_core/main.c
@@ -50,12 +62,7 @@ add_executable(firmware_dsp
     firmware_core/audio_usb.c
     firmware_core/audio_i2s.c 
     firmware_core/audio_bus.c
-
-    # The preprocessor will choose the write one
-    lab1_audioPassThrough/audio_proc.c
-    lab2_robotEffects/audio_proc.c
-    lab3_digitalFilterDesign/audio_proc.c
-    lab4_granularSynthesis/audio_proc.c
+    ${LAB_SRC}
 )
 
 # Generate PIO header

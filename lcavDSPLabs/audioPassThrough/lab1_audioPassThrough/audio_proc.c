@@ -68,7 +68,6 @@ static inline void audio_process_mute() {
 }
 
 /* Public Functions */
-#if LAB_ID == 1
 
 void audio_proc_init() {
   arm_fir_init_f32(&fir_dc_removal_instance, NUM_TAPS, fir_dc_removal_coeffs, fir_dc_removal_state, BLOCK_SIZE);
@@ -104,4 +103,3 @@ void audio_process(){
   }
   rb_increment_write_index(&g_proc_to_usb_buffer);
 }
-#endif // LAB_ID == 1 
