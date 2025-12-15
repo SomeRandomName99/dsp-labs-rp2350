@@ -41,7 +41,7 @@ add_subdirectory(${CMSISDSP}/Source bin_dsp)
 target_compile_options(CMSISDSP PRIVATE -Ofast -ffunction-sections -fdata-sections)
 
 # Choose the lab to build
-set(LAB_ID 4 CACHE STRING "Selects the lab to build (1=PassThrough, 2=RobotEffects)")
+set(LAB_ID 5 CACHE STRING "Selects the lab to build (1=PassThrough, 2=RobotEffects)")
 
 if(LAB_ID EQUAL 1)
     set(LAB_SRC lab1_audioPassThrough/audio_proc.c)
@@ -51,6 +51,8 @@ elseif(LAB_ID EQUAL 3)
     set(LAB_SRC lab3_digitalFilterDesign/audio_proc.c)
 elseif(LAB_ID EQUAL 4)
     set(LAB_SRC lab4_granularSynthesis/audio_proc.c)
+elseif(LAB_ID EQUAL 5)
+    set(LAB_SRC lab5_linearPredictiveCoding/audio_proc.c)
 else()
     message(FATAL_ERROR "Invalid LAB_ID: ${LAB_ID}")
 endif()
