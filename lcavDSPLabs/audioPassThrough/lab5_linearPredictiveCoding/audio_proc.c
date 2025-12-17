@@ -115,7 +115,7 @@ void audio_proc_init() {
   arm_fir_init_f32(&fir_lpc_analysis_instance, LPC_ORDER + 1, fir_lpc_analysis_coeffs, fir_lpc_analysis_state,
                    GRAIN_LEN_SAMPLES);
   arm_biquad_cascade_df2T_init_f32(&iir_lpc_synthesis_instance, LPC_ORDER / 2, iir_lpc_synthesis_coeffs,
-                                   lpc_synthesis_state);
+                                   iir_lpc_synthesis_state);
 
   // Create trapezoidal taper window
   uint32_t single_edge_overlap_len = GRAIN_LEN_SAMPLES - STRIDE_SAMPLES - 1;
@@ -175,13 +175,25 @@ void audio_process() {
   if (size(&x_concat) >= GRAIN_LEN_SAMPLES) {
     gpio_put(15, 1);
 
-    arm_correlate_f32(rb_get_read_buffer(&x_concat), GRAIN_LEN_SAMPLES, rb_get_read_buffer(&x_concat),
-                      GRAIN_LEN_SAMPLES, autocorrelation_vector);
+    arm_correlate_f32((float32_t *)rb_get_read_buffer(&x_concat), GRAIN_LEN_SAMPLES,
+                      (float32_t *)rb_get_read_buffer(&x_concat), GRAIN_LEN_SAMPLES, autocorrelation_vector);
     float err;
     arm_levinson_durbin_f32(&autocorrelation_vector[GRAIN_LEN_SAMPLES - 1], fir_lpc_analysis_coeffs, &err, LPC_ORDER);
+    const uint32_t stages = LPC_ORDER / 2;
+    for (uint32_t s = 0; s < stages; ++s) {
+      const float32_t a1 = fir_lpc_analysis_coeffs[2 * s + 0];
+      const float32_t a2 = fir_lpc_analysis_coeffs[2 * s + 1];
+      const uint32_t base = 5 * s;
+      iir_lpc_synthesis_coeffs[base + 0] = 1.0f; // b0
+      iir_lpc_synthesis_coeffs[base + 1] = 0.0f; // b1
+      iir_lpc_synthesis_coeffs[base + 2] = 0.0f; // b2
+      iir_lpc_synthesis_coeffs[base + 3] = a1;   // a1 (denominator sign matches CMSIS convention)
+      iir_lpc_synthesis_coeffs[base + 4] = a2;   // a2
+    }
 
     // forward filter grain using the computed coefficients
-    arm_fir_f32(&fir_lpc_analysis_instance, rb_get_read_buffer(&x_concat), lpc_excitation, GRAIN_LEN_SAMPLES);
+    arm_fir_f32(&fir_lpc_analysis_instance, (float32_t *)rb_get_read_buffer(&x_concat), lpc_excitation,
+                GRAIN_LEN_SAMPLES);
 
     for (int i = 0; i < GRAIN_LEN_SAMPLES; i++) {
       const uint16_t interp_idx = interpolation_indices[i];
@@ -191,8 +203,10 @@ void audio_process() {
       processing_buf1[i] = x0 * (1.0f - interp_amp) + x1 * interp_amp;
     }
 
+    // TODO: Update iir coefficients before calling the filter
+
     // reverse filter the resampled and filtered grain
-    arm_biquad_cascade_df2T_f32(&iir_lpc_synthesis_instance, processing_buf1, lpc_excitation, uint32_t blockSize);
+    arm_biquad_cascade_df2T_f32(&iir_lpc_synthesis_instance, processing_buf1, lpc_excitation, GRAIN_LEN_SAMPLES);
 
     arm_mult_f32(lpc_excitation, taper_window, lpc_excitation, GRAIN_LEN_SAMPLES);
     arm_add_f32(lpc_excitation, grain_overlap, lpc_excitation, OVERLAP_LEN);
