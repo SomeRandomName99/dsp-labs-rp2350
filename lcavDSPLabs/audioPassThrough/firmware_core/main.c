@@ -1,15 +1,15 @@
 #include <stdio.h>
 
-#include "pico/stdlib.h"
-#include "pico/cyw43_arch.h"
-#include "hardware/pio.h"
 #include "hardware/dma.h"
+#include "hardware/pio.h"
+#include "pico/cyw43_arch.h"
+#include "pico/stdlib.h"
 
-#include "firmware_dsp.pio.h"
-#include "audio_usb.h"
+#include "audio_bus.h"
 #include "audio_i2s.h"
 #include "audio_proc.h"
-#include "audio_bus.h"
+#include "audio_usb.h"
+#include "firmware_dsp.pio.h"
 #include "ring_buffer.h"
 
 #define LED_DELAY_MS 500
@@ -33,11 +33,10 @@ int main() {
   audio_proc_init();
   audio_i2s_init(pio0, 0);
   audio_i2s_usb_dma_init();
-  
 
-  while(1){
+  while (1) {
     tud_task();
-    if(!rb_is_empty(&g_i2s_to_proc_buffer) && !rb_is_full(&g_proc_to_usb_buffer)){
+    if (!rb_is_empty(&g_i2s_to_proc_buffer) && !rb_is_full(&g_proc_to_usb_buffer)) {
       gpio_put(DBG_LOOP_PIN, 1);
       audio_process();
       gpio_put(DBG_LOOP_PIN, 0);
@@ -48,21 +47,21 @@ int main() {
 }
 
 /* Local function implementation */
-void toggleLED(void){
+void toggleLED(void) {
   static bool is_on = false;
 
   static uint32_t toggleTime = 0;
-  uint32_t curTime =  board_millis();
+  uint32_t curTime = board_millis();
   bool toggle = (curTime - toggleTime) >= 500;
 
-  if(toggle){
+  if (toggle) {
     is_on = !is_on;
     cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, is_on);
     toggleTime = curTime;
   }
 }
 
-void debug_gpio_init(){
+void debug_gpio_init() {
   gpio_init(DBG_LOOP_PIN);
   gpio_init(DBG_AUDIO_PIN);
 
@@ -70,7 +69,7 @@ void debug_gpio_init(){
   gpio_set_dir(DBG_AUDIO_PIN, GPIO_OUT);
 }
 
-void wireless_init(){
+void wireless_init() {
   cyw43_arch_init();
   cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, true);
 }
