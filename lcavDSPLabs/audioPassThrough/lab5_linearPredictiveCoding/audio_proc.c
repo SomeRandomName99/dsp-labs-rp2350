@@ -35,21 +35,21 @@ static float32_t iir_lpc_synthesis_state[LPC_ORDER];
 static arm_biquad_cascade_df2T_instance_f32 iir_lpc_synthesis_instance = {
     .numStages = IIR_LPC_STAGES, .pCoeffs = iir_lpc_synthesis_coeffs, .pState = iir_lpc_synthesis_state};
 
-static float32_t taper_window[GRAIN_LEN_SAMPLES];          // 4KB
-static uint16_t interpolation_indices[GRAIN_LEN_SAMPLES];  // 2KB
-static float32_t interpolation_amps[GRAIN_LEN_SAMPLES];    // 4KB
-static float32_t grain_overlap[OVERLAP_LEN] = {0};         // 0.4KB
-rb_init_static(x_concat, (1 << 11), sizeof(float32_t));    // 8KB Supports grains of up to 42ms
-rb_init_static(output_fifo, (1 << 11), sizeof(float32_t)); // 8KB
-static float32_t input_grain_buffer[GRAIN_LEN_SAMPLES];
-static float32_t autocorrelation_vector[2 * GRAIN_LEN_SAMPLES - 1];
-static float32_t lpc_excitation[GRAIN_LEN_SAMPLES];
+static float32_t taper_window[GRAIN_LEN_SAMPLES];                       // 4KB
+static uint16_t interpolation_indices[GRAIN_LEN_SAMPLES];               // 2KB
+static float32_t interpolation_amps[GRAIN_LEN_SAMPLES];                 // 4KB
+static float32_t grain_overlap[OVERLAP_LEN] = {0};                      // 0.4KB
+rb_init_static_size_aligned(x_concat, (1 << 11), sizeof(float32_t));    // 8KB Supports grains of up to 42ms
+rb_init_static_size_aligned(output_fifo, (1 << 11), sizeof(float32_t)); // 8KB
+static float32_t input_grain_buffer[GRAIN_LEN_SAMPLES];                 // 8KB
+static float32_t autocorrelation_vector[2 * GRAIN_LEN_SAMPLES - 1];     // 16KB
+static float32_t lpc_excitation[GRAIN_LEN_SAMPLES];                     // 8KB
 static float32_t fir_lpc_analysis_coeffs[GRAIN_LEN_SAMPLES];
 static arm_fir_instance_f32 fir_lpc_analysis_instance;
 static float32_t fir_lpc_analysis_state[GRAIN_LEN_SAMPLES + LPC_ORDER];
 
-static uint32_t dma_data_chan;
-static dma_channel_config dma_config;
+static uint32_t dma_write_rb_chan, dma_read_rb_chan;
+static dma_channel_config dma_write_rb_config, dma_read_rb_config;
 
 /* Private Helper Functions */
 // Lightweight RNG for dithering
@@ -94,35 +94,15 @@ static inline int16_t float_to_pcm16_dither(float x, uint32_t *rng_state) {
 
 static inline void write_to_ring_buffer_with_dma(ring_buffer_t *rb, float32_t *data, uint16_t length) {
   assert(size(rb) + length <= rb->capacity);
-  uint16_t num_writes_before_wrap = rb_get_num_contiguous_writes(rb);
-  if (num_writes_before_wrap < length) {
-    dma_channel_configure(dma_data_chan, &dma_config, rb_get_write_buffer(rb), data, num_writes_before_wrap, true);
-    dma_channel_wait_for_finish_blocking(dma_data_chan);
-    rb_increase_write_index(rb, num_writes_before_wrap);
-    dma_channel_configure(dma_data_chan, &dma_config, rb_get_write_buffer(rb), &data[num_writes_before_wrap],
-                          length - num_writes_before_wrap, true);
-    dma_channel_wait_for_finish_blocking(dma_data_chan);
-    rb_increase_write_index(rb, length - num_writes_before_wrap);
-  } else {
-    dma_channel_configure(dma_data_chan, &dma_config, rb_get_write_buffer(rb), data, length, true);
-    dma_channel_wait_for_finish_blocking(dma_data_chan);
-    rb_increase_write_index(rb, length);
-  }
+  dma_channel_configure(dma_write_rb_chan, &dma_write_rb_config, rb_get_write_buffer(rb), data, length, true);
+  dma_channel_wait_for_finish_blocking(dma_write_rb_chan);
+  rb_increase_write_index(rb, length);
 }
 
 static inline void write_to_grain_buffer_from_dma(ring_buffer_t *rb, float32_t *data, uint16_t length) {
   assert(size(rb) >= length);
-  uint16_t num_reads_before_wrap = rb_get_num_contiguous_reads(rb);
-  if (num_reads_before_wrap < length) {
-    dma_channel_configure(dma_data_chan, &dma_config, rb_get_write_buffer(rb), data, num_reads_before_wrap, true);
-    dma_channel_wait_for_finish_blocking(dma_data_chan);
-    dma_channel_configure(dma_data_chan, &dma_config, rb_get_write_buffer(rb), &data[num_reads_before_wrap],
-                          length - num_reads_before_wrap, true);
-    dma_channel_wait_for_finish_blocking(dma_data_chan);
-  } else {
-    dma_channel_configure(dma_data_chan, &dma_config, rb_get_write_buffer(rb), data, length, true);
-    dma_channel_wait_for_finish_blocking(dma_data_chan);
-  }
+  dma_channel_configure(dma_read_rb_chan, &dma_read_rb_config, data, rb_get_read_buffer(rb), length, true);
+  dma_channel_wait_for_finish_blocking(dma_read_rb_chan);
 }
 
 /* Public Functions */
@@ -165,11 +145,19 @@ void audio_proc_init() {
   }
 
   // Setup DMA channel for moving buffers around
-  dma_data_chan = dma_claim_unused_channel(true);
-  dma_config = dma_channel_get_default_config(dma_data_chan);
-  channel_config_set_transfer_data_size(&dma_config, DMA_SIZE_32);
-  channel_config_set_read_increment(&dma_config, true);
-  channel_config_set_write_increment(&dma_config, true);
+  dma_write_rb_chan = dma_claim_unused_channel(true);
+  dma_write_rb_config = dma_channel_get_default_config(dma_write_rb_chan);
+  channel_config_set_transfer_data_size(&dma_write_rb_config, DMA_SIZE_32);
+  channel_config_set_read_increment(&dma_write_rb_config, true);
+  channel_config_set_write_increment(&dma_write_rb_config, true);
+  channel_config_set_ring(&dma_write_rb_config, true, 13);
+
+  dma_read_rb_chan = dma_claim_unused_channel(true);
+  dma_read_rb_config = dma_channel_get_default_config(dma_read_rb_chan);
+  channel_config_set_transfer_data_size(&dma_read_rb_config, DMA_SIZE_32);
+  channel_config_set_read_increment(&dma_read_rb_config, true);
+  channel_config_set_write_increment(&dma_read_rb_config, true);
+  channel_config_set_ring(&dma_read_rb_config, false, 13);
 }
 
 void audio_process() {
@@ -205,10 +193,10 @@ void audio_process() {
     gpio_put(15, 1);
 
     write_to_grain_buffer_from_dma(&x_concat, input_grain_buffer, GRAIN_LEN_SAMPLES);
-    // arm_correlate_f32(input_grain_buffer, GRAIN_LEN_SAMPLES, input_grain_buffer, GRAIN_LEN_SAMPLES,
-    //                   autocorrelation_vector);
+    arm_correlate_f32(input_grain_buffer, GRAIN_LEN_SAMPLES, input_grain_buffer, GRAIN_LEN_SAMPLES,
+                      autocorrelation_vector);
     float err;
-    // arm_levinson_durbin_f32(&autocorrelation_vector[GRAIN_LEN_SAMPLES - 1], fir_lpc_analysis_coeffs, &err, LPC_ORDER);
+    arm_levinson_durbin_f32(&autocorrelation_vector[GRAIN_LEN_SAMPLES - 1], fir_lpc_analysis_coeffs, &err, LPC_ORDER);
 
     // Update the iir filter's coefficients
     for (uint32_t s = 0; s < IIR_LPC_STAGES; ++s) {
@@ -220,7 +208,7 @@ void audio_process() {
     }
 
     // forward filter grain using the computed coefficients
-    // arm_fir_f32(&fir_lpc_analysis_instance, input_grain_buffer, lpc_excitation, GRAIN_LEN_SAMPLES);
+    arm_fir_f32(&fir_lpc_analysis_instance, input_grain_buffer, lpc_excitation, GRAIN_LEN_SAMPLES);
 
     for (int i = 0; i < GRAIN_LEN_SAMPLES; i++) {
       const uint16_t interp_idx = interpolation_indices[i];
@@ -231,7 +219,7 @@ void audio_process() {
     }
 
     // reverse filter the resampled and filtered grain
-    // arm_biquad_cascade_df2T_f32(&iir_lpc_synthesis_instance, temp_grain_buffer, lpc_excitation, GRAIN_LEN_SAMPLES);
+    arm_biquad_cascade_df2T_f32(&iir_lpc_synthesis_instance, temp_grain_buffer, lpc_excitation, GRAIN_LEN_SAMPLES);
 
     arm_mult_f32(lpc_excitation, taper_window, lpc_excitation, GRAIN_LEN_SAMPLES);
     arm_add_f32(lpc_excitation, grain_overlap, lpc_excitation, OVERLAP_LEN);
