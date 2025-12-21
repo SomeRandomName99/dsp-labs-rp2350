@@ -18,6 +18,7 @@
 #define STRIDE_SAMPLES (AUDIO_SAMPLES_PER_MS * STRIDE_MS)
 #define OVERLAP_LEN (GRAIN_LEN_SAMPLES - STRIDE_SAMPLES - 1)
 #define LPC_ORDER 32
+#define IIR_LPC_STAGES (LPC_ORDER / 2)
 
 /* State Variables */
 // https://arm-software.github.io/CMSIS-DSP/latest/group__BiquadCascadeDF2T.html
@@ -29,10 +30,10 @@ static float32_t iir_dc_block_state[2];
 static arm_biquad_cascade_df2T_instance_f32 iir_dc_block_instance = {
     .numStages = 1, .pCoeffs = iir_dc_block_coeffs, .pState = iir_dc_block_state};
 
-static float32_t iir_lpc_synthesis_coeffs[5 * LPC_ORDER / 2];
+static float32_t iir_lpc_synthesis_coeffs[5 * IIR_LPC_STAGES];
 static float32_t iir_lpc_synthesis_state[LPC_ORDER];
 static arm_biquad_cascade_df2T_instance_f32 iir_lpc_synthesis_instance = {
-    .numStages = LPC_ORDER / 2, .pCoeffs = iir_lpc_synthesis_coeffs, .pState = iir_lpc_synthesis_state};
+    .numStages = IIR_LPC_STAGES, .pCoeffs = iir_lpc_synthesis_coeffs, .pState = iir_lpc_synthesis_state};
 
 static float32_t taper_window[GRAIN_LEN_SAMPLES];          // 4KB
 static uint16_t interpolation_indices[GRAIN_LEN_SAMPLES];  // 2KB
@@ -133,8 +134,19 @@ void audio_proc_init() {
   arm_biquad_cascade_df2T_init_f32(&iir_dc_block_instance, 1, iir_dc_block_coeffs, iir_dc_block_state);
   arm_fir_init_f32(&fir_lpc_analysis_instance, LPC_ORDER + 1, fir_lpc_analysis_coeffs, fir_lpc_analysis_state,
                    GRAIN_LEN_SAMPLES);
-  arm_biquad_cascade_df2T_init_f32(&iir_lpc_synthesis_instance, LPC_ORDER / 2, iir_lpc_synthesis_coeffs,
+  arm_biquad_cascade_df2T_init_f32(&iir_lpc_synthesis_instance, IIR_LPC_STAGES, iir_lpc_synthesis_coeffs,
                                    iir_lpc_synthesis_state);
+
+  // Initialize the coedfficients, mostly useful for b0, b1, b2 which will not change even when toe coefficients are
+  // updated
+  for (uint32_t s = 0; s < IIR_LPC_STAGES; ++s) {
+    const uint32_t base = 5 * s;
+    iir_lpc_synthesis_coeffs[base + 0] = 1.0f; // b0
+    iir_lpc_synthesis_coeffs[base + 1] = 0.0f; // b1
+    iir_lpc_synthesis_coeffs[base + 2] = 0.0f; // b2
+    iir_lpc_synthesis_coeffs[base + 3] = 0.0f; // a1
+    iir_lpc_synthesis_coeffs[base + 4] = 0.0f; // a2
+  }
 
   // Create trapezoidal taper window
   uint32_t single_edge_overlap_len = GRAIN_LEN_SAMPLES - STRIDE_SAMPLES - 1;
@@ -202,16 +214,12 @@ void audio_process() {
     arm_levinson_durbin_f32(&autocorrelation_vector[GRAIN_LEN_SAMPLES - 1], fir_lpc_analysis_coeffs, &err, LPC_ORDER);
 
     // Update the iir filter's coefficients with newly calculated ones
-    const uint32_t stages = LPC_ORDER / 2;
-    for (uint32_t s = 0; s < stages; ++s) {
+    for (uint32_t s = 0; s < IIR_LPC_STAGES; ++s) {
       const float32_t a1 = fir_lpc_analysis_coeffs[2 * s + 0];
       const float32_t a2 = fir_lpc_analysis_coeffs[2 * s + 1];
       const uint32_t base = 5 * s;
-      iir_lpc_synthesis_coeffs[base + 0] = 1.0f; // b0
-      iir_lpc_synthesis_coeffs[base + 1] = 0.0f; // b1
-      iir_lpc_synthesis_coeffs[base + 2] = 0.0f; // b2
-      iir_lpc_synthesis_coeffs[base + 3] = a1;   // a1 (denominator sign matches CMSIS convention)
-      iir_lpc_synthesis_coeffs[base + 4] = a2;   // a2
+      iir_lpc_synthesis_coeffs[base + 3] = a1;
+      iir_lpc_synthesis_coeffs[base + 4] = a2;
     }
 
     // forward filter grain using the computed coefficients
