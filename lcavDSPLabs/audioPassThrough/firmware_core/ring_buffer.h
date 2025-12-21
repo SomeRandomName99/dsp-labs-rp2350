@@ -23,7 +23,8 @@ typedef struct {
 } ring_buffer_t;
 
 /* Constants and Macros */
-// Internal implementation macro that is used to avoid code duplication.
+// Internal implementation macros that are used to avoid code duplication.
+
 #define _rb_init(linkage, name, num_elements, size_of_element)                                                         \
   static_assert((num_elements > 0) && ((num_elements & (num_elements - 1)) == 0));                                     \
   static_assert(num_elements <= (1 << 15));                                                                            \
@@ -34,10 +35,29 @@ typedef struct {
                                 .element_size = size_of_element,                                                       \
                                 .buffer = _rb_buffer_##name}
 
-#define rb_init_static(name, num_elements, size_of_element) _rb_init(static, name, num_elements, size_of_element)
+// This macro created a ring buffer that is aligned to its size. This is needed for
+// hardware wrapping of DMA operations. The size needs to be a power of 2 for this to work, hence both num_elements
+// and size_of_element are asserted.
+#define _rb_init_aligned(linkage, name, num_elements, size_of_element)                                                 \
+  static_assert((num_elements > 0) && ((num_elements & (num_elements - 1)) == 0));                                     \
+  static_assert((size_of_element > 0) && ((size_of_element & (size_of_element - 1)) == 0));                            \
+  static_assert(num_elements <= (1 << 15));                                                                            \
+  linkage uint8_t _rb_buffer_##name[num_elements * size_of_element]                                                    \
+      __attribute__((aligned(num_elements * size_of_element)));                                                        \
+  linkage ring_buffer_t name = {.write_index = 0,                                                                      \
+                                .read_index = 0,                                                                       \
+                                .capacity = num_elements,                                                              \
+                                .element_size = size_of_element,                                                       \
+                                .buffer = _rb_buffer_##name}
 
+#define rb_init_static(name, num_elements, size_of_element) _rb_init(static, name, num_elements, size_of_element)
 #define rb_init_shared(name, num_elements, size_of_element)                                                            \
   _rb_init(/* no linkage */, name, num_elements, size_of_element)
+
+#define rb_init_static_size_aligned(name, num_elements, size_of_element)                                               \
+  _rb_init_aligned(static, name, num_elements, size_of_element)
+#define rb_init_shared_size_aligned(name, num_elements, size_of_element)                                               \
+  _rb_init_aligned(/* no linkage */, name, num_elements, size_of_element)
 
 /* Public Functions */
 static inline uint16_t size(ring_buffer_t *rb) { return rb->write_index - rb->read_index; }
