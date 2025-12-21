@@ -116,15 +116,12 @@ static inline void write_to_grain_buffer_from_dma(ring_buffer_t *rb, float32_t *
   if (num_reads_before_wrap < length) {
     dma_channel_configure(dma_data_chan, &dma_config, rb_get_write_buffer(rb), data, num_reads_before_wrap, true);
     dma_channel_wait_for_finish_blocking(dma_data_chan);
-    rb_increase_write_index(rb, num_reads_before_wrap);
     dma_channel_configure(dma_data_chan, &dma_config, rb_get_write_buffer(rb), &data[num_reads_before_wrap],
                           length - num_reads_before_wrap, true);
     dma_channel_wait_for_finish_blocking(dma_data_chan);
-    rb_increase_write_index(rb, length - num_reads_before_wrap);
   } else {
     dma_channel_configure(dma_data_chan, &dma_config, rb_get_write_buffer(rb), data, length, true);
     dma_channel_wait_for_finish_blocking(dma_data_chan);
-    rb_increase_write_index(rb, length);
   }
 }
 
@@ -208,12 +205,12 @@ void audio_process() {
     gpio_put(15, 1);
 
     write_to_grain_buffer_from_dma(&x_concat, input_grain_buffer, GRAIN_LEN_SAMPLES);
-    arm_correlate_f32(input_grain_buffer, GRAIN_LEN_SAMPLES, input_grain_buffer, GRAIN_LEN_SAMPLES,
-                      autocorrelation_vector);
+    // arm_correlate_f32(input_grain_buffer, GRAIN_LEN_SAMPLES, input_grain_buffer, GRAIN_LEN_SAMPLES,
+    //                   autocorrelation_vector);
     float err;
-    arm_levinson_durbin_f32(&autocorrelation_vector[GRAIN_LEN_SAMPLES - 1], fir_lpc_analysis_coeffs, &err, LPC_ORDER);
+    // arm_levinson_durbin_f32(&autocorrelation_vector[GRAIN_LEN_SAMPLES - 1], fir_lpc_analysis_coeffs, &err, LPC_ORDER);
 
-    // Update the iir filter's coefficients with newly calculated ones
+    // Update the iir filter's coefficients
     for (uint32_t s = 0; s < IIR_LPC_STAGES; ++s) {
       const float32_t a1 = fir_lpc_analysis_coeffs[2 * s + 0];
       const float32_t a2 = fir_lpc_analysis_coeffs[2 * s + 1];
@@ -223,7 +220,7 @@ void audio_process() {
     }
 
     // forward filter grain using the computed coefficients
-    arm_fir_f32(&fir_lpc_analysis_instance, input_grain_buffer, lpc_excitation, GRAIN_LEN_SAMPLES);
+    // arm_fir_f32(&fir_lpc_analysis_instance, input_grain_buffer, lpc_excitation, GRAIN_LEN_SAMPLES);
 
     for (int i = 0; i < GRAIN_LEN_SAMPLES; i++) {
       const uint16_t interp_idx = interpolation_indices[i];
@@ -234,7 +231,7 @@ void audio_process() {
     }
 
     // reverse filter the resampled and filtered grain
-    arm_biquad_cascade_df2T_f32(&iir_lpc_synthesis_instance, temp_grain_buffer, lpc_excitation, GRAIN_LEN_SAMPLES);
+    // arm_biquad_cascade_df2T_f32(&iir_lpc_synthesis_instance, temp_grain_buffer, lpc_excitation, GRAIN_LEN_SAMPLES);
 
     arm_mult_f32(lpc_excitation, taper_window, lpc_excitation, GRAIN_LEN_SAMPLES);
     arm_add_f32(lpc_excitation, grain_overlap, lpc_excitation, OVERLAP_LEN);
