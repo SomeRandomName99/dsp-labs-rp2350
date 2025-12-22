@@ -42,11 +42,11 @@ static float32_t grain_overlap[OVERLAP_LEN] = {0};                      // 0.4KB
 rb_init_static_size_aligned(x_concat, (1 << 11), sizeof(float32_t));    // 8KB Supports grains of up to 42ms
 rb_init_static_size_aligned(output_fifo, (1 << 11), sizeof(float32_t)); // 8KB
 static float32_t input_grain_buffer[GRAIN_LEN_SAMPLES];                 // 8KB
-static float32_t autocorrelation_vector[2 * GRAIN_LEN_SAMPLES - 1];     // 16KB
 static float32_t lpc_excitation[GRAIN_LEN_SAMPLES];                     // 8KB
+static float32_t fir_lpc_analysis_state[GRAIN_LEN_SAMPLES + LPC_ORDER]; // 8KB
 static float32_t fir_lpc_analysis_coeffs[GRAIN_LEN_SAMPLES];
 static arm_fir_instance_f32 fir_lpc_analysis_instance;
-static float32_t fir_lpc_analysis_state[GRAIN_LEN_SAMPLES + LPC_ORDER];
+static float32_t autocorrelation_vector[LPC_ORDER + 1];
 
 static uint32_t dma_write_rb_chan, dma_read_rb_chan;
 static dma_channel_config dma_write_rb_config, dma_read_rb_config;
@@ -103,6 +103,24 @@ static inline void write_to_grain_buffer_from_dma(ring_buffer_t *rb, float32_t *
   assert(size(rb) >= length);
   dma_channel_configure(dma_read_rb_chan, &dma_read_rb_config, data, rb_get_read_buffer(rb), length, true);
   dma_channel_wait_for_finish_blocking(dma_read_rb_chan);
+}
+
+// The reason the CMSIS-DSP function is not used is that it always the correlation with maxDelay = 2 * len - 1 which for
+// a grain length is too much to calculate in 1 ms.
+static inline void autocorrelate_f32(const float32_t *src, float32_t src_len, float32_t *dst, uint32_t max_delay) {
+  assert((src_len > 0) && (max_delay + 1 < src_len));
+
+  float32_t inv_len = 1.0f / (float32_t)src_len;
+
+  for (uint32_t delay = 0; delay < max_delay; delay++) {
+    uint32_t overlap_len = src_len - delay; // Sliding windows length
+    const float32_t *x_ptr = src;
+    const float32_t *x_ptr_delayed = src + delay;
+
+    float32_t acc;
+    arm_dot_prod_f32(x_ptr, x_ptr_delayed, overlap_len, &acc);
+    dst[delay] = acc * inv_len;
+  }
 }
 
 /* Public Functions */
