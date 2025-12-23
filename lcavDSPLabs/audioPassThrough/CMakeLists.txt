@@ -72,6 +72,7 @@ pico_generate_pio_header(firmware_dsp ${CMAKE_CURRENT_LIST_DIR}/firmware_core/fi
 
 target_link_libraries(firmware_dsp 
     pico_stdlib
+    pico_multicore
     hardware_dma
     hardware_pio
     pico_cyw43_arch_none

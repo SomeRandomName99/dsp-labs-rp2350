@@ -1,13 +1,16 @@
-#include <math.h>
-
+#include "arm_math_types.h"
+#include "dsp/basic_math_functions.h"
 #include "dsp/filtering_functions.h"
 #include "hardware/dma.h"
+#include "pico/multicore.h"
+#include "pico/stdlib.h"
 
 #include "arm_math.h"
 
 #include "audio_bus.h"
 #include "audio_usb.h"
 #include "ring_buffer.h"
+#include <stdint.h>
 
 /* Constants and Macros */
 #define BLOCK_SIZE AUDIO_PACKET_SAMPLES
@@ -50,6 +53,18 @@ static float32_t autocorrelation_vector[LPC_ORDER + 1];
 
 static uint32_t dma_write_rb_chan, dma_read_rb_chan;
 static dma_channel_config dma_write_rb_config, dma_read_rb_config;
+
+/* Structs */
+typedef struct {
+  void (*func)(const float32_t *, float32_t, float32_t *, uint32_t, uint32_t);
+  const float32_t *src;
+  float32_t src_len;
+  float32_t *dst;
+  uint32_t start_delay;
+  uint32_t end_delay;
+} autocorr_job_t;
+
+static autocorr_job_t autocorr_job;
 
 /* Private Helper Functions */
 // Lightweight RNG for dithering
@@ -107,12 +122,11 @@ static inline void write_to_grain_buffer_from_dma(ring_buffer_t *rb, float32_t *
 
 // The reason the CMSIS-DSP function is not used is that it always the correlation with maxDelay = 2 * len - 1 which for
 // a grain length is too much to calculate in 1 ms.
-static inline void autocorrelate_f32(const float32_t *src, float32_t src_len, float32_t *dst, uint32_t max_delay) {
-  assert((src_len > 0) && (max_delay + 1 < src_len));
-
+static inline void autocorrelate(const float32_t *src, float32_t src_len, float32_t *dst, uint32_t start_delay,
+                                 uint32_t end_delay) {
   float32_t inv_len = 1.0f / (float32_t)src_len;
 
-  for (uint32_t delay = 0; delay < max_delay; delay++) {
+  for (uint32_t delay = start_delay; delay < end_delay; delay++) {
     uint32_t overlap_len = src_len - delay; // Sliding windows length
     const float32_t *x_ptr = src;
     const float32_t *x_ptr_delayed = src + delay;
@@ -123,8 +137,15 @@ static inline void autocorrelate_f32(const float32_t *src, float32_t src_len, fl
   }
 }
 
-/* Public Functions */
+void launch_core1() {
+  while (1) {
+    autocorr_job_t *job = (autocorr_job_t *)multicore_fifo_pop_blocking();
+    job->func(job->src, job->src_len, job->dst, job->start_delay, job->end_delay);
+    multicore_fifo_push_blocking(0); // Core 0 blocking wait on this
+  }
+}
 
+/* Public Functions */
 void audio_proc_init() {
   arm_biquad_cascade_df2T_init_f32(&iir_dc_block_instance, 1, iir_dc_block_coeffs, iir_dc_block_state);
   arm_fir_init_f32(&fir_lpc_analysis_instance, LPC_ORDER + 1, fir_lpc_analysis_coeffs, fir_lpc_analysis_state,
@@ -176,6 +197,9 @@ void audio_proc_init() {
   channel_config_set_read_increment(&dma_read_rb_config, true);
   channel_config_set_write_increment(&dma_read_rb_config, true);
   channel_config_set_ring(&dma_read_rb_config, false, 13);
+
+  // Launch a function to run on core 1 which will handle half of the correlation
+  multicore_launch_core1(launch_core1);
 }
 
 void audio_process() {
@@ -211,10 +235,19 @@ void audio_process() {
     gpio_put(15, 1);
 
     write_to_grain_buffer_from_dma(&x_concat, input_grain_buffer, GRAIN_LEN_SAMPLES);
-    arm_correlate_f32(input_grain_buffer, GRAIN_LEN_SAMPLES, input_grain_buffer, GRAIN_LEN_SAMPLES,
-                      autocorrelation_vector);
+    // Let the first half be done by core 1
+    autocorr_job = (autocorr_job_t){.func = &autocorrelate,
+                                    .src = input_grain_buffer,
+                                    .src_len = GRAIN_LEN_SAMPLES,
+                                    .dst = autocorrelation_vector,
+                                    .start_delay = 0,
+                                    .end_delay = LPC_ORDER >> 2};
+    multicore_fifo_push_blocking((uintptr_t)&autocorr_job);
+    autocorrelate(input_grain_buffer, GRAIN_LEN_SAMPLES, autocorrelation_vector, (LPC_ORDER - (LPC_ORDER >> 2)),
+                  LPC_ORDER);
+    multicore_fifo_pop_blocking(); // wait for core 1 to finish
     float err;
-    arm_levinson_durbin_f32(&autocorrelation_vector[GRAIN_LEN_SAMPLES - 1], fir_lpc_analysis_coeffs, &err, LPC_ORDER);
+    arm_levinson_durbin_f32(autocorrelation_vector, fir_lpc_analysis_coeffs, &err, LPC_ORDER);
 
     // Update the iir filter's coefficients
     for (uint32_t s = 0; s < IIR_LPC_STAGES; ++s) {
