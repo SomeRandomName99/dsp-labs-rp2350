@@ -1,9 +1,8 @@
 #include "arm_math_types.h"
-#include "dsp/basic_math_functions.h"
-#include "dsp/filtering_functions.h"
 #include "hardware/dma.h"
 #include "pico/multicore.h"
 #include "pico/stdlib.h"
+#include "pico/util/queue.h"
 
 #include "arm_math.h"
 
@@ -22,6 +21,9 @@
 #define OVERLAP_LEN (GRAIN_LEN_SAMPLES - STRIDE_SAMPLES - 1)
 #define LPC_ORDER 32
 #define IIR_LPC_STAGES (LPC_ORDER / 2)
+#define FIR_MULTICORE_SPLIT_INDEX (GRAIN_LEN_SAMPLES / 2)
+#define FIR_CORE0_NUM_TAPS (LPC_ORDER / 2)
+#define FIR_CORE1_NUM_TAPS ((LPC_ORDER / 2) + 1)
 
 /* State Variables */
 // https://arm-software.github.io/CMSIS-DSP/latest/group__BiquadCascadeDF2T.html
@@ -46,20 +48,23 @@ rb_init_static_size_aligned(x_concat, (1 << 11), sizeof(float32_t));    // 8KB S
 rb_init_static_size_aligned(output_fifo, (1 << 11), sizeof(float32_t)); // 8KB
 static float32_t input_grain_buffer[GRAIN_LEN_SAMPLES];                 // 8KB
 static float32_t lpc_excitation[GRAIN_LEN_SAMPLES];                     // 8KB
-static float32_t fir_lpc_analysis_state[GRAIN_LEN_SAMPLES + LPC_ORDER]; // 8KB
+static float32_t fir_lpc_analysis_state_core0[GRAIN_LEN_SAMPLES / 2 + LPC_ORDER];
+static float32_t fir_lpc_analysis_state_core1[GRAIN_LEN_SAMPLES / 2 + LPC_ORDER];
 static float32_t fir_lpc_analysis_coeffs[GRAIN_LEN_SAMPLES];
-static arm_fir_instance_f32 fir_lpc_analysis_instance;
+static arm_fir_instance_f32 fir_lpc_analysis_instance_core0;
+static arm_fir_instance_f32 fir_lpc_analysis_instance_core1;
+static float32_t fir_global_history[FIR_CORE0_NUM_TAPS];
 static float32_t autocorrelation_vector[LPC_ORDER + 1];
 
 static uint32_t dma_write_rb_chan, dma_read_rb_chan;
 static dma_channel_config dma_write_rb_config, dma_read_rb_config;
 
+static queue_t autocorrelation_queue;
+static queue_t fir_lpc_queue;
+static queue_t results_queue;
+
 /* Structs */
 typedef struct {
-  void (*func)(const float32_t *, float32_t, float32_t *, uint32_t, uint32_t);
-  const float32_t *src;
-  float32_t src_len;
-  float32_t *dst;
   uint32_t start_delay;
   uint32_t end_delay;
 } autocorr_job_t;
@@ -139,17 +144,30 @@ static inline void autocorrelate(const float32_t *src, float32_t src_len, float3
 
 void launch_core1() {
   while (1) {
-    autocorr_job_t *job = (autocorr_job_t *)multicore_fifo_pop_blocking();
-    job->func(job->src, job->src_len, job->dst, job->start_delay, job->end_delay);
-    multicore_fifo_push_blocking(0); // Core 0 blocking wait on this
+    if (!queue_is_empty(&autocorrelation_queue)) {
+      autocorr_job_t job;
+      queue_remove_blocking(&autocorrelation_queue, &job);
+      autocorrelate(input_grain_buffer, GRAIN_LEN_SAMPLES, autocorrelation_vector, job.start_delay, job.end_delay);
+      int32_t result = 0;
+      queue_add_blocking(&results_queue, &result);
+    } else if (!queue_is_empty(&fir_lpc_queue)) {
+      uint32_t trigger;
+      queue_remove_blocking(&fir_lpc_queue, &trigger);
+      arm_fir_f32(&fir_lpc_analysis_instance_core1, &input_grain_buffer[FIR_MULTICORE_SPLIT_INDEX],
+                  &lpc_excitation[FIR_MULTICORE_SPLIT_INDEX], GRAIN_LEN_SAMPLES - FIR_MULTICORE_SPLIT_INDEX);
+      int32_t result = 0;
+      queue_add_blocking(&results_queue, &result);
+    }
   }
 }
 
 /* Public Functions */
 void audio_proc_init() {
   arm_biquad_cascade_df2T_init_f32(&iir_dc_block_instance, 1, iir_dc_block_coeffs, iir_dc_block_state);
-  arm_fir_init_f32(&fir_lpc_analysis_instance, LPC_ORDER + 1, fir_lpc_analysis_coeffs, fir_lpc_analysis_state,
-                   GRAIN_LEN_SAMPLES);
+  arm_fir_init_f32(&fir_lpc_analysis_instance_core0, FIR_CORE0_NUM_TAPS, fir_lpc_analysis_coeffs,
+                   fir_lpc_analysis_state_core0, FIR_MULTICORE_SPLIT_INDEX);
+  arm_fir_init_f32(&fir_lpc_analysis_instance_core1, FIR_CORE1_NUM_TAPS, fir_lpc_analysis_coeffs,
+                   fir_lpc_analysis_state_core1, GRAIN_LEN_SAMPLES - FIR_MULTICORE_SPLIT_INDEX);
   arm_biquad_cascade_df2T_init_f32(&iir_lpc_synthesis_instance, IIR_LPC_STAGES, iir_lpc_synthesis_coeffs,
                                    iir_lpc_synthesis_state);
 
@@ -198,7 +216,11 @@ void audio_proc_init() {
   channel_config_set_write_increment(&dma_read_rb_config, true);
   channel_config_set_ring(&dma_read_rb_config, false, 13);
 
-  // Launch a function to run on core 1 which will handle half of the correlation
+  // Setup queues to send tasks to core 1
+  queue_init(&autocorrelation_queue, sizeof(autocorr_job_t), 2);
+  queue_init(&fir_lpc_queue, sizeof(uint32_t), 2);
+  queue_init(&results_queue, sizeof(int32_t), 2);
+
   multicore_launch_core1(launch_core1);
 }
 
@@ -233,19 +255,17 @@ void audio_process() {
   // Granular Synthesis Processing if enough samples are available
   if (size(&x_concat) >= GRAIN_LEN_SAMPLES) {
     gpio_put(15, 1);
-
     write_to_grain_buffer_from_dma(&x_concat, input_grain_buffer, GRAIN_LEN_SAMPLES);
+
     // Let the first half be done by core 1
-    autocorr_job = (autocorr_job_t){.func = &autocorrelate,
-                                    .src = input_grain_buffer,
-                                    .src_len = GRAIN_LEN_SAMPLES,
-                                    .dst = autocorrelation_vector,
-                                    .start_delay = 0,
-                                    .end_delay = LPC_ORDER >> 2};
-    multicore_fifo_push_blocking((uintptr_t)&autocorr_job);
+    autocorr_job_t autocorr_job = (autocorr_job_t){.start_delay = 0, .end_delay = LPC_ORDER >> 2};
+    queue_add_blocking(&autocorrelation_queue, &autocorr_job);
     autocorrelate(input_grain_buffer, GRAIN_LEN_SAMPLES, autocorrelation_vector, (LPC_ORDER - (LPC_ORDER >> 2)),
                   LPC_ORDER);
-    multicore_fifo_pop_blocking(); // wait for core 1 to finish
+
+    int32_t result;
+    queue_remove_blocking(&results_queue, &result);
+
     float err;
     arm_levinson_durbin_f32(autocorrelation_vector, fir_lpc_analysis_coeffs, &err, LPC_ORDER);
 
@@ -259,8 +279,17 @@ void audio_process() {
     }
 
     // forward filter grain using the computed coefficients
-    arm_fir_f32(&fir_lpc_analysis_instance, input_grain_buffer, lpc_excitation, GRAIN_LEN_SAMPLES);
+    memcpy(fir_lpc_analysis_state_core0, fir_global_history, (FIR_CORE0_NUM_TAPS - 1) * sizeof(float32_t));
+    uint32_t core1_histor_offset = FIR_MULTICORE_SPLIT_INDEX - (FIR_CORE0_NUM_TAPS - 1);
+    memcpy(fir_lpc_analysis_state_core1, &input_grain_buffer[core1_histor_offset], (FIR_CORE1_NUM_TAPS - 1));
+    uint32_t trigger = 0;
+    queue_add_blocking(&fir_lpc_queue, &trigger);
+    arm_fir_f32(&fir_lpc_analysis_instance_core0, input_grain_buffer, lpc_excitation, FIR_MULTICORE_SPLIT_INDEX);
+    queue_remove_blocking(&results_queue, &result);
+    memcpy(fir_global_history, &input_grain_buffer[GRAIN_LEN_SAMPLES - (FIR_CORE0_NUM_TAPS - 1)],
+           (FIR_CORE0_NUM_TAPS - 1) * sizeof(float32_t));
 
+    // Resample the grain
     for (int i = 0; i < GRAIN_LEN_SAMPLES; i++) {
       const uint16_t interp_idx = interpolation_indices[i];
       const float32_t interp_amp = interpolation_amps[i];
