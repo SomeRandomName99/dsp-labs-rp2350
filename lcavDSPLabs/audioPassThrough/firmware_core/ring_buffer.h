@@ -26,8 +26,9 @@ typedef struct {
 // Internal implementation macros that are used to avoid code duplication.
 
 #define _rb_init(linkage, name, num_elements, size_of_element)                                                         \
-  static_assert((num_elements > 0) && ((num_elements & (num_elements - 1)) == 0));                                     \
-  static_assert(num_elements <= (1 << 15));                                                                            \
+  static_assert((num_elements > 0) && ((num_elements & (num_elements - 1)) == 0),                                      \
+                "num_elements must be a positive power of 2");                                                         \
+  static_assert(num_elements <= (1 << 15), "num_elements must be smaller that 2^15");                                  \
   linkage uint8_t _rb_buffer_##name[num_elements * size_of_element] __attribute__((aligned(4)));                       \
   linkage ring_buffer_t name = {.write_index = 0,                                                                      \
                                 .read_index = 0,                                                                       \
@@ -39,9 +40,11 @@ typedef struct {
 // hardware wrapping of DMA operations. The size needs to be a power of 2 for this to work, hence both num_elements
 // and size_of_element are asserted.
 #define _rb_init_aligned(linkage, name, num_elements, size_of_element)                                                 \
-  static_assert((num_elements > 0) && ((num_elements & (num_elements - 1)) == 0));                                     \
-  static_assert((size_of_element > 0) && ((size_of_element & (size_of_element - 1)) == 0));                            \
-  static_assert(num_elements <= (1 << 15));                                                                            \
+  static_assert((num_elements > 0) && ((num_elements & (num_elements - 1)) == 0),                                      \
+                "num_elements must be a positive power of 2");                                                         \
+  static_assert((size_of_element > 0) && ((size_of_element & (size_of_element - 1)) == 0),                             \
+                "Size of elements must be a power of 2 to ensure size alignment.");                                    \
+  static_assert(num_elements <= (1 << 15), "num_elements must be smaller that 2^15");                                  \
   linkage uint8_t _rb_buffer_##name[num_elements * size_of_element]                                                    \
       __attribute__((aligned(num_elements * size_of_element)));                                                        \
   linkage ring_buffer_t name = {.write_index = 0,                                                                      \
