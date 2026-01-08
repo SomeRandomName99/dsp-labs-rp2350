@@ -35,11 +35,6 @@ static float32_t iir_dc_block_state[2];
 static arm_biquad_cascade_df2T_instance_f32 iir_dc_block_instance = {
     .numStages = 1, .pCoeffs = iir_dc_block_coeffs, .pState = iir_dc_block_state};
 
-static float32_t iir_lpc_synthesis_coeffs[5 * IIR_LPC_STAGES];
-static float32_t iir_lpc_synthesis_state[LPC_ORDER];
-static arm_biquad_cascade_df2T_instance_f32 iir_lpc_synthesis_instance = {
-    .numStages = IIR_LPC_STAGES, .pCoeffs = iir_lpc_synthesis_coeffs, .pState = iir_lpc_synthesis_state};
-
 static float32_t taper_window[GRAIN_LEN_SAMPLES];                       // 4KB
 static uint16_t interpolation_indices[GRAIN_LEN_SAMPLES];               // 2KB
 static float32_t interpolation_amps[GRAIN_LEN_SAMPLES];                 // 4KB
@@ -53,6 +48,7 @@ static float32_t fir_lpc_analysis_state_core1[GRAIN_LEN_SAMPLES / 2 + LPC_ORDER]
 static float32_t fir_lpc_analysis_coeffs[GRAIN_LEN_SAMPLES];
 static arm_fir_instance_f32 fir_lpc_analysis_instance_core0;
 static arm_fir_instance_f32 fir_lpc_analysis_instance_core1;
+static float32_t iir_lpc_synthesis_state[GRAIN_LEN_SAMPLES + LPC_ORDER];
 static float32_t fir_global_history[FIR_CORE0_NUM_TAPS];
 static float32_t autocorrelation_vector[LPC_ORDER + 1];
 
@@ -161,190 +157,24 @@ void launch_core1() {
   }
 }
 
-/*
- * Copyright (C) 2010-2021 ARM Limited or its affiliates. All rights reserved.
- *
- * SPDX-License-Identifier: Apache-2.0
- *
- * This function has been adapted to optimize it for pole-only use case by someRandomName, 2026.
- */
-void arm_biquad_cascade_df2T_f32_optimized(const arm_biquad_cascade_df2T_instance_f32 *S, const float32_t *pSrc,
-                                           float32_t *pDst, uint32_t blockSize) {
-  const float32_t *pIn = pSrc;           /* Source pointer */
-  float32_t *pOut = pDst;                /* Destination pointer */
-  float32_t *pState = S->pState;         /* State pointer */
-  const float32_t *pCoeffs = S->pCoeffs; /* Coefficient pointer */
-  float32_t acc1;                        /* Accumulator */
-  float32_t b0, b1, b2, a1, a2;          /* Filter coefficients */
-  float32_t Xn1;                         /* Temporary input */
-  float32_t d1, d2;                      /* State variables */
-  uint32_t sample, stage = S->numStages; /* Loop counters */
+void iir_lpc_synthesis(float32_t *src, float32_t *dst, const float32_t *coeffs, float32_t *history_buffer,
+                       uint32_t order, uint32_t blockSize) {
+  // y[n] = x[n] - (a_1*y[n-1] + a_2*y[n-2] + ... + a_order*y[n-order])
+  for (uint32_t i = 0; i < blockSize; i++) {
+    float32_t y = src[i];
+    // feedback = a[0]*y[n-1] + a[1]*y[n-2] + ... + a[order-1]*y[n-order]
+    float32_t feedback;
+    arm_dot_prod_f32(history_buffer, coeffs, LPC_ORDER, &feedback);
+    y -= feedback;
 
-  do {
-    /* Reading the coefficients */
-    a1 = pCoeffs[3];
-    a2 = pCoeffs[4];
+    dst[i] = history_buffer[order + i] = y;
+  }
 
-    /* Reading the state values */
-    d1 = pState[0];
-    d2 = pState[1];
-
-    pCoeffs += 5U;
-
-    /* Loop unrolling: Compute 16 outputs at a time */
-    sample = blockSize >> 4U;
-
-    while (sample > 0U) {
-
-      /* y[n] = b0 * x[n] + d1 */
-      /* d1 = a1 * y[n] + d2 */
-      /* d2 = a2 * y[n] */
-
-      /*  1 */
-      Xn1 = *pIn++;
-      acc1 = Xn1 + d1;
-      d1 = a1 * acc1 + d2;
-      d2 = a2 * acc1;
-      *pOut++ = acc1;
-
-      /*  2 */
-      Xn1 = *pIn++;
-      acc1 = Xn1 + d1;
-      d1 = a1 * acc1 + d2;
-      d2 = a2 * acc1;
-      *pOut++ = acc1;
-
-      /*  3 */
-      Xn1 = *pIn++;
-      acc1 = Xn1 + d1;
-      d1 = a1 * acc1 + d2;
-      d2 = a2 * acc1;
-      *pOut++ = acc1;
-
-      /*  4 */
-      Xn1 = *pIn++;
-      acc1 = Xn1 + d1;
-      d1 = a1 * acc1 + d2;
-      d2 = a2 * acc1;
-      *pOut++ = acc1;
-
-      /*  5 */
-      Xn1 = *pIn++;
-      acc1 = Xn1 + d1;
-      d1 = a1 * acc1 + d2;
-      d2 = a2 * acc1;
-      *pOut++ = acc1;
-
-      /*  6 */
-      Xn1 = *pIn++;
-      acc1 = Xn1 + d1;
-      d1 = a1 * acc1 + d2;
-      d2 = a2 * acc1;
-      *pOut++ = acc1;
-
-      /*  7 */
-      Xn1 = *pIn++;
-      acc1 = Xn1 + d1;
-      d1 = a1 * acc1 + d2;
-      d2 = a2 * acc1;
-      *pOut++ = acc1;
-
-      /*  8 */
-      Xn1 = *pIn++;
-      acc1 = Xn1 + d1;
-      d1 = a1 * acc1 + d2;
-      d2 = a2 * acc1;
-      *pOut++ = acc1;
-
-      /*  9 */
-      Xn1 = *pIn++;
-      acc1 = Xn1 + d1;
-      d1 = a1 * acc1 + d2;
-      d2 = a2 * acc1;
-      *pOut++ = acc1;
-
-      /* 10 */
-      Xn1 = *pIn++;
-      acc1 = Xn1 + d1;
-      d1 = a1 * acc1 + d2;
-      d2 = a2 * acc1;
-      *pOut++ = acc1;
-
-      /* 11 */
-      Xn1 = *pIn++;
-      acc1 = Xn1 + d1;
-      d1 = a1 * acc1 + d2;
-      d2 = a2 * acc1;
-      *pOut++ = acc1;
-
-      /* 12 */
-      Xn1 = *pIn++;
-      acc1 = Xn1 + d1;
-      d1 = a1 * acc1 + d2;
-      d2 = a2 * acc1;
-      *pOut++ = acc1;
-
-      /* 13 */
-      Xn1 = *pIn++;
-      acc1 = Xn1 + d1;
-      d1 = a1 * acc1 + d2;
-      d2 = a2 * acc1;
-      *pOut++ = acc1;
-
-      /* 14 */
-      Xn1 = *pIn++;
-      acc1 = Xn1 + d1;
-      d1 = a1 * acc1 + d2;
-      d2 = a2 * acc1;
-      *pOut++ = acc1;
-
-      /* 15 */
-      Xn1 = *pIn++;
-      acc1 = Xn1 + d1;
-      d1 = a1 * acc1 + d2;
-      d2 = a2 * acc1;
-      *pOut++ = acc1;
-
-      /* 16 */
-      Xn1 = *pIn++;
-      acc1 = Xn1 + d1;
-      d1 = a1 * acc1 + d2;
-      d2 = a2 * acc1;
-      *pOut++ = acc1;
-
-      /* decrement loop counter */
-      sample--;
-    }
-
-    /* Loop unrolling: Compute remaining outputs */
-    sample = blockSize & 0xFU;
-
-    while (sample > 0U) {
-      Xn1 = *pIn++;
-      acc1 = Xn1 + d1;
-      d1 = a1 * acc1 + d2;
-      d2 = a2 * acc1;
-      *pOut++ = acc1;
-
-      /* decrement loop counter */
-      sample--;
-    }
-
-    /* Store the updated state variables back into the state array */
-    pState[0] = d1;
-    pState[1] = d2;
-
-    pState += 2U;
-
-    /* The current stage output is given as the input to the next stage */
-    pIn = pDst;
-
-    /* Reset the output working pointer */
-    pOut = pDst;
-
-    /* decrement loop counter */
-    stage--;
-  } while (stage > 0U);
+  // Move the last order samples to the start of the history_buffer in a newest first manner to prepare for the next
+  // function call
+  for (uint32_t i = 0; i < order; i++) {
+    history_buffer[i] = history_buffer[blockSize - i - 1];
+  }
 }
 
 /* Public Functions */
@@ -354,19 +184,6 @@ void audio_proc_init() {
                    fir_lpc_analysis_state_core0, FIR_MULTICORE_SPLIT_INDEX);
   arm_fir_init_f32(&fir_lpc_analysis_instance_core1, FIR_CORE1_NUM_TAPS, fir_lpc_analysis_coeffs,
                    fir_lpc_analysis_state_core1, GRAIN_LEN_SAMPLES - FIR_MULTICORE_SPLIT_INDEX);
-  arm_biquad_cascade_df2T_init_f32(&iir_lpc_synthesis_instance, IIR_LPC_STAGES, iir_lpc_synthesis_coeffs,
-                                   iir_lpc_synthesis_state);
-
-  // Initialize the coedfficients, mostly useful for b0, b1, b2 which will not change even when toe coefficients are
-  // updated
-  for (uint32_t s = 0; s < IIR_LPC_STAGES; ++s) {
-    const uint32_t base = 5 * s;
-    iir_lpc_synthesis_coeffs[base + 0] = 1.0f; // b0
-    iir_lpc_synthesis_coeffs[base + 1] = 0.0f; // b1
-    iir_lpc_synthesis_coeffs[base + 2] = 0.0f; // b2
-    iir_lpc_synthesis_coeffs[base + 3] = 0.0f; // a1
-    iir_lpc_synthesis_coeffs[base + 4] = 0.0f; // a2
-  }
 
   // Create trapezoidal taper window
   uint32_t single_edge_overlap_len = GRAIN_LEN_SAMPLES - STRIDE_SAMPLES - 1;
