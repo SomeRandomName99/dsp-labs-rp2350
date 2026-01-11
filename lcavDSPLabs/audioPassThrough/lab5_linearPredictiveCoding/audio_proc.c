@@ -45,7 +45,7 @@ static float32_t input_grain_buffer[GRAIN_LEN_SAMPLES];                 // 8KB
 static float32_t lpc_excitation[GRAIN_LEN_SAMPLES];                     // 8KB
 static float32_t fir_lpc_analysis_state_core0[GRAIN_LEN_SAMPLES / 2 + LPC_ORDER];
 static float32_t fir_lpc_analysis_state_core1[GRAIN_LEN_SAMPLES / 2 + LPC_ORDER];
-static float32_t fir_lpc_analysis_coeffs[GRAIN_LEN_SAMPLES];
+static float32_t fir_lpc_analysis_coeffs[LPC_ORDER];
 static arm_fir_instance_f32 fir_lpc_analysis_instance_core0;
 static arm_fir_instance_f32 fir_lpc_analysis_instance_core1;
 static float32_t iir_lpc_synthesis_state[GRAIN_LEN_SAMPLES + LPC_ORDER];
@@ -157,17 +157,65 @@ void launch_core1() {
   }
 }
 
+/*
+ * Copyright (c) 2010-2021 Arm Limited or its affiliates. All rights reserved.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * An unrolled version that can be inlined directly due to pico-sdk having problems with link time optimization
+ *
+ */
+void arm_dot_prod_f32_inline(const float32_t *pSrcA, const float32_t *pSrcB, uint32_t blockSize, float32_t *result) {
+  uint32_t blkCnt;      /* Loop counter */
+  float32_t sum = 0.0f; /* Temporary return variable */
+
+  /* Loop unrolling: Compute 4 outputs at a time */
+  blkCnt = blockSize >> 2U;
+
+  /* First part of the processing with loop unrolling. Compute 4 outputs at a time.
+   ** a second loop below computes the remaining 1 to 3 samples. */
+  while (blkCnt > 0U) {
+    /* C = A[0]* B[0] + A[1]* B[1] + A[2]* B[2] + .....+ A[blockSize-1]* B[blockSize-1] */
+
+    /* Calculate dot product and store result in a temporary buffer. */
+    sum += (*pSrcA++) * (*pSrcB++);
+
+    sum += (*pSrcA++) * (*pSrcB++);
+
+    sum += (*pSrcA++) * (*pSrcB++);
+
+    sum += (*pSrcA++) * (*pSrcB++);
+
+    /* Decrement loop counter */
+    blkCnt--;
+  }
+
+  /* Loop unrolling: Compute remaining outputs */
+  blkCnt = blockSize % 0x4U;
+
+  while (blkCnt > 0U) {
+    /* C = A[0]* B[0] + A[1]* B[1] + A[2]* B[2] + .....+ A[blockSize-1]* B[blockSize-1] */
+
+    /* Calculate dot product and store result in a temporary buffer. */
+    sum += (*pSrcA++) * (*pSrcB++);
+
+    /* Decrement loop counter */
+    blkCnt--;
+  }
+
+  /* Store result in destination buffer */
+  *result = sum;
+}
+
 void iir_lpc_synthesis(float32_t *src, float32_t *dst, const float32_t *coeffs, float32_t *history_buffer,
                        uint32_t order, uint32_t blockSize) {
   // y[n] = x[n] - (a_1*y[n-1] + a_2*y[n-2] + ... + a_order*y[n-order])
   for (uint32_t i = 0; i < blockSize; i++) {
-    float32_t y = src[i];
     // feedback = a[0]*y[n-1] + a[1]*y[n-2] + ... + a[order-1]*y[n-order]
     float32_t feedback;
-    arm_dot_prod_f32(history_buffer, coeffs, LPC_ORDER, &feedback);
-    y -= feedback;
+    arm_dot_prod_f32_inline(&history_buffer[i], coeffs, LPC_ORDER, &feedback);
 
-    dst[i] = history_buffer[order + i] = y;
+    dst[i] = history_buffer[order + i] = src[i] - feedback;
   }
 
   // Move the last order samples to the start of the history_buffer in a newest first manner to prepare for the next
@@ -272,15 +320,6 @@ void audio_process() {
     float err;
     arm_levinson_durbin_f32(autocorrelation_vector, fir_lpc_analysis_coeffs, &err, LPC_ORDER);
 
-    // Update the iir filter's coefficients
-    for (uint32_t s = 0; s < IIR_LPC_STAGES; ++s) {
-      const float32_t a1 = fir_lpc_analysis_coeffs[2 * s + 0];
-      const float32_t a2 = fir_lpc_analysis_coeffs[2 * s + 1];
-      const uint32_t base = 5 * s;
-      iir_lpc_synthesis_coeffs[base + 3] = a1;
-      iir_lpc_synthesis_coeffs[base + 4] = a2;
-    }
-
     // forward filter grain using the computed coefficients
     memcpy(fir_lpc_analysis_state_core0, fir_global_history, (FIR_CORE0_NUM_TAPS - 1) * sizeof(float32_t));
     // This needs to change if the value can be negative. Some history will be taken from the input buffer
@@ -303,8 +342,8 @@ void audio_process() {
     }
 
     // reverse filter the resampled and filtered grain
-    arm_biquad_cascade_df2T_f32_optimized(&iir_lpc_synthesis_instance, temp_grain_buffer, lpc_excitation,
-                                          GRAIN_LEN_SAMPLES);
+    iir_lpc_synthesis(temp_grain_buffer, lpc_excitation, fir_lpc_analysis_coeffs, iir_lpc_synthesis_state, LPC_ORDER,
+                      GRAIN_LEN_SAMPLES);
 
     arm_mult_f32(lpc_excitation, taper_window, lpc_excitation, GRAIN_LEN_SAMPLES);
     arm_add_f32(lpc_excitation, grain_overlap, lpc_excitation, OVERLAP_LEN);
