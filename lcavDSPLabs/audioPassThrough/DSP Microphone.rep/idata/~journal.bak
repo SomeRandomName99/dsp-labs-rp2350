@@ -1,0 +1,5 @@
+IADD:00000004:/firmware_dsp_atomic.elf
+IDSET:/firmware_dsp_atomic.elf:7f001e50171641527697333
+IDEL:/firmware_dsp_atomic.elf
+IADD:00000005:/firmware_dsp_atomic.elf
+IDSET:/firmware_dsp_atomic.elf:7f001e50d71856042855375

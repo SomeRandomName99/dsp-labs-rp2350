@@ -318,6 +318,7 @@ void audio_process() {
     memset(grain_overlap, 0, OVERLAP_LEN * sizeof(float32_t));
     return;
   }
+  static bool processing = false;
 
   static uint32_t rng_state = 0x12345678; // Seed for RNG
   // Two buffers are needed because CMSIS-DSP filter functions are not inplace
@@ -337,53 +338,65 @@ void audio_process() {
   // Granular Synthesis Processing if enough samples are available
   if (size(&x_concat) >= GRAIN_LEN_SAMPLES) {
     gpio_put(15, 1);
-    write_to_grain_buffer_from_dma(&x_concat, input_grain_buffer, GRAIN_LEN_SAMPLES);
 
-    // Let the first half be done by core 1
-    autocorr_job_t autocorr_job = (autocorr_job_t){.start_delay = 0, .end_delay = LPC_ORDER >> 2};
-    queue_add_blocking(&autocorrelation_queue, &autocorr_job);
-    autocorrelate(input_grain_buffer, GRAIN_LEN_SAMPLES, autocorrelation_vector, (LPC_ORDER - (LPC_ORDER >> 2)),
-                  LPC_ORDER);
-
-    int32_t result;
-    queue_remove_blocking(&results_queue, &result);
-
-    float err;
-    arm_levinson_durbin_f32(autocorrelation_vector, fir_lpc_analysis_coeffs, &err, LPC_ORDER);
-
-    // forward filter grain using the computed coefficients
-    memcpy(fir_lpc_analysis_state_core0, fir_global_history, (FIR_CORE0_NUM_TAPS - 1) * sizeof(float32_t));
-    // This needs to change if the value can be negative. Some history will be taken from the input buffer
-    uint32_t core1_histor_offset = FIR_MULTICORE_SPLIT_INDEX - (FIR_CORE0_NUM_TAPS - 1);
-    memcpy(fir_lpc_analysis_state_core1, &input_grain_buffer[core1_histor_offset], (FIR_CORE1_NUM_TAPS - 1));
     uint32_t trigger = 0;
-    queue_add_blocking(&fir_lpc_queue, &trigger);
-    arm_fir_f32(&fir_lpc_analysis_instance_core0, input_grain_buffer, lpc_excitation, FIR_MULTICORE_SPLIT_INDEX);
-    queue_remove_blocking(&results_queue, &result);
-    memcpy(fir_global_history, &input_grain_buffer[GRAIN_LEN_SAMPLES - (FIR_CORE0_NUM_TAPS - 1)],
-           (FIR_CORE0_NUM_TAPS - 1) * sizeof(float32_t));
+    int32_t result;
+    // Due to the limitations of the hardware and the high LPC order and sampling rate of the audio(48Khz), I am forced
+    // to split the LPC processing part to two 1ms blocks in order to keep up with the real time nature of the program.
+    // This will effectively add 1 ms to the total delay of the system, but I do not think that it is an acceptable
+    // trade since I did not overclock the chip.(Maybe I should do it)
+    if (!processing) {
+      processing = true;
+      write_to_grain_buffer_from_dma(&x_concat, input_grain_buffer, GRAIN_LEN_SAMPLES);
 
-    // Resample the grain
-    for (uint32_t i = 0; i < GRAIN_LEN_SAMPLES; i++) {
-      const uint16_t interp_idx = interpolation_indices[i];
-      const float32_t interp_amp = interpolation_amps[i];
-      const float32_t x0 = lpc_excitation[interp_idx];
-      const float32_t x1 = lpc_excitation[interp_idx + 1];
-      temp_grain_buffer[i] = x0 * (1.0f - interp_amp) + x1 * interp_amp;
+      // Let the first half be done by core 1
+      autocorr_job_t autocorr_job = (autocorr_job_t){.start_delay = 0, .end_delay = LPC_ORDER >> 2};
+      queue_add_blocking(&autocorrelation_queue, &autocorr_job);
+      autocorrelate(input_grain_buffer, GRAIN_LEN_SAMPLES, autocorrelation_vector, (LPC_ORDER - (LPC_ORDER >> 2)),
+                    LPC_ORDER);
+
+      queue_remove_blocking(&results_queue, &result);
+
+      float err;
+      arm_levinson_durbin_f32(autocorrelation_vector, fir_lpc_analysis_coeffs, &err, LPC_ORDER);
+
+      // forward filter grain using the computed coefficients
+      memcpy(fir_lpc_analysis_state_core0, fir_global_history, (FIR_CORE0_NUM_TAPS - 1) * sizeof(float32_t));
+      // This needs to change if the value can be negative. Some history will be taken from the input buffer
+      uint32_t core1_histor_offset = FIR_MULTICORE_SPLIT_INDEX - (FIR_CORE0_NUM_TAPS - 1);
+      memcpy(fir_lpc_analysis_state_core1, &input_grain_buffer[core1_histor_offset], (FIR_CORE1_NUM_TAPS - 1));
+      queue_add_blocking(&fir_lpc_queue, &trigger);
+      arm_fir_f32(&fir_lpc_analysis_instance_core0, input_grain_buffer, lpc_excitation, FIR_MULTICORE_SPLIT_INDEX);
+      queue_remove_blocking(&results_queue, &result);
+      memcpy(fir_global_history, &input_grain_buffer[GRAIN_LEN_SAMPLES - (FIR_CORE0_NUM_TAPS - 1)],
+             (FIR_CORE0_NUM_TAPS - 1) * sizeof(float32_t));
+
+      // Resample the grain
+      for (uint32_t i = 0; i < GRAIN_LEN_SAMPLES; i++) {
+        const uint16_t interp_idx = interpolation_indices[i];
+        const float32_t interp_amp = interpolation_amps[i];
+        const float32_t x0 = lpc_excitation[interp_idx];
+        const float32_t x1 = lpc_excitation[interp_idx + 1];
+        temp_grain_buffer[i] = x0 * (1.0f - interp_amp) + x1 * interp_amp;
+      }
+      gpio_put(15, 0);
+    } else {
+      gpio_put(15, 1);
+
+      // reverse filter the resampled grain
+      queue_add_blocking(&iir_lpc_queue, &trigger);
+      iir_lpc_synthesis_parallel(temp_grain_buffer, lpc_excitation, fir_lpc_analysis_coeffs, iir_lpc_synthesis_state,
+                                 LPC_ORDER, LPC_ORDER / 2, GRAIN_LEN_SAMPLES);
+      queue_remove_blocking(&results_queue, &result);
+
+      arm_mult_f32(lpc_excitation, taper_window, lpc_excitation, GRAIN_LEN_SAMPLES);
+      arm_add_f32(lpc_excitation, grain_overlap, lpc_excitation, OVERLAP_LEN);
+      memcpy(grain_overlap, &lpc_excitation[STRIDE_SAMPLES], OVERLAP_LEN * sizeof(float32_t));
+      write_to_ring_buffer_with_dma(&output_fifo, lpc_excitation, STRIDE_SAMPLES);
+      rb_increase_read_index(&x_concat, STRIDE_SAMPLES);
+      gpio_put(15, 0);
+      processing = false;
     }
-
-    // reverse filter the resampled and filtered grain
-    queue_add_blocking(&iir_lpc_queue, &trigger);
-    iir_lpc_synthesis_parallel(temp_grain_buffer, lpc_excitation, fir_lpc_analysis_coeffs, iir_lpc_synthesis_state,
-                               LPC_ORDER, LPC_ORDER / 2, GRAIN_LEN_SAMPLES);
-    queue_remove_blocking(&results_queue, &result);
-
-    arm_mult_f32(lpc_excitation, taper_window, lpc_excitation, GRAIN_LEN_SAMPLES);
-    arm_add_f32(lpc_excitation, grain_overlap, lpc_excitation, OVERLAP_LEN);
-    memcpy(grain_overlap, &lpc_excitation[STRIDE_SAMPLES], OVERLAP_LEN * sizeof(float32_t));
-    write_to_ring_buffer_with_dma(&output_fifo, lpc_excitation, STRIDE_SAMPLES);
-    rb_increase_read_index(&x_concat, STRIDE_SAMPLES);
-    gpio_put(15, 0);
   }
 
   if (size(&output_fifo) >= BLOCK_SIZE) {

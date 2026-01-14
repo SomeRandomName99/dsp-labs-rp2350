@@ -1,0 +1,7 @@
+VERSION=1
+/
+  00000000:firmware_dsp.elf:7f001cf3317137356371625
+  00000003:firmware_dsp_4_unroll.elf:7f001c3c260332659655333
+  00000001:firmware_dsp_inline_dot.elf:7f001c34359543428546250
+NEXT-ID:4
+MD5:d41d8cd98f00b204e9800998ecf8427e
