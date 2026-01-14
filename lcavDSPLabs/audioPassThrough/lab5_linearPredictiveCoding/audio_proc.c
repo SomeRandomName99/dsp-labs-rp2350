@@ -1,4 +1,3 @@
-#include "arm_math_types.h"
 #include "hardware/dma.h"
 #include "pico/multicore.h"
 #include "pico/stdlib.h"
@@ -9,6 +8,8 @@
 #include "audio_bus.h"
 #include "audio_usb.h"
 #include "ring_buffer.h"
+
+#include <stdatomic.h>
 #include <stdint.h>
 
 /* Constants and Macros */
@@ -42,6 +43,7 @@ static float32_t grain_overlap[OVERLAP_LEN] = {0};                      // 0.4KB
 rb_init_static_size_aligned(x_concat, (1 << 11), sizeof(float32_t));    // 8KB Supports grains of up to 42ms
 rb_init_static_size_aligned(output_fifo, (1 << 11), sizeof(float32_t)); // 8KB
 static float32_t input_grain_buffer[GRAIN_LEN_SAMPLES];                 // 8KB
+static float32_t temp_grain_buffer[GRAIN_LEN_SAMPLES];                  // 8KB
 static float32_t lpc_excitation[GRAIN_LEN_SAMPLES];                     // 8KB
 static float32_t fir_lpc_analysis_state_core0[GRAIN_LEN_SAMPLES / 2 + LPC_ORDER];
 static float32_t fir_lpc_analysis_state_core1[GRAIN_LEN_SAMPLES / 2 + LPC_ORDER];
@@ -57,6 +59,7 @@ static dma_channel_config dma_write_rb_config, dma_read_rb_config;
 
 static queue_t autocorrelation_queue;
 static queue_t fir_lpc_queue;
+static queue_t iir_lpc_queue;
 static queue_t results_queue;
 
 /* Structs */
@@ -138,25 +141,6 @@ static inline void autocorrelate(const float32_t *src, float32_t src_len, float3
   }
 }
 
-void launch_core1() {
-  while (1) {
-    if (!queue_is_empty(&autocorrelation_queue)) {
-      autocorr_job_t job;
-      queue_remove_blocking(&autocorrelation_queue, &job);
-      autocorrelate(input_grain_buffer, GRAIN_LEN_SAMPLES, autocorrelation_vector, job.start_delay, job.end_delay);
-      int32_t result = 0;
-      queue_add_blocking(&results_queue, &result);
-    } else if (!queue_is_empty(&fir_lpc_queue)) {
-      uint32_t trigger;
-      queue_remove_blocking(&fir_lpc_queue, &trigger);
-      arm_fir_f32(&fir_lpc_analysis_instance_core1, &input_grain_buffer[FIR_MULTICORE_SPLIT_INDEX],
-                  &lpc_excitation[FIR_MULTICORE_SPLIT_INDEX], GRAIN_LEN_SAMPLES - FIR_MULTICORE_SPLIT_INDEX);
-      int32_t result = 0;
-      queue_add_blocking(&results_queue, &result);
-    }
-  }
-}
-
 /*
  * Copyright (c) 2010-2021 Arm Limited or its affiliates. All rights reserved.
  *
@@ -165,7 +149,8 @@ void launch_core1() {
  * An unrolled version that can be inlined directly due to pico-sdk having problems with link time optimization
  *
  */
-void arm_dot_prod_f32_inline(const float32_t *pSrcA, const float32_t *pSrcB, uint32_t blockSize, float32_t *result) {
+__attribute__((always_inline)) inline void arm_dot_prod_f32_inline(const float32_t *pSrcA, const float32_t *pSrcB,
+                                                                   uint32_t blockSize, float32_t *result) {
   uint32_t blkCnt;      /* Loop counter */
   float32_t sum = 0.0f; /* Temporary return variable */
 
@@ -207,21 +192,67 @@ void arm_dot_prod_f32_inline(const float32_t *pSrcA, const float32_t *pSrcB, uin
   *result = sum;
 }
 
-void iir_lpc_synthesis(float32_t *src, float32_t *dst, const float32_t *coeffs, float32_t *history_buffer,
-                       uint32_t order, uint32_t blockSize) {
-  // y[n] = x[n] - (a_1*y[n-1] + a_2*y[n-2] + ... + a_order*y[n-order])
-  for (uint32_t i = 0; i < blockSize; i++) {
-    // feedback = a[0]*y[n-1] + a[1]*y[n-2] + ... + a[order-1]*y[n-order]
-    float32_t feedback;
-    arm_dot_prod_f32_inline(&history_buffer[i], coeffs, LPC_ORDER, &feedback);
+/* Parallelism is achieved by splitting the different orders aka the multiplications for a single sample betweem
+ * different cores. Since this is an IIR filter and history is important, the output per sample needs to be calculated
+ * serially. Splitting based on the order is perfect, since the same history could be used for both core 1 and core 2.
+ * Parallelism in this case is basically pipelining the calculation.
+ */
+void iir_lpc_synthesis_parallel(float32_t *src, float32_t *dst, const float32_t *coeffs, float32_t *history_buffer,
+                                uint32_t order, uint32_t multicore_order_split_index, uint32_t blockSize) {
+  float32_t feedback;
+  static volatile atomic_uint curr_processing_idx = 0;
+  if (get_core_num() == 0) {
 
-    dst[i] = history_buffer[order + i] = src[i] - feedback;
+    for (uint32_t i = 0; i < blockSize; i++) {
+      // feedback = a[0]*y[n-1] + a[1]*y[n-2] + ... + a[multicore_order_split_index-1]*y[n-multicore_split_index]
+      arm_dot_prod_f32_inline(&history_buffer[i], coeffs, multicore_order_split_index, &feedback);
+      history_buffer[order + i] = feedback;
+      atomic_store_explicit(&curr_processing_idx, i + 1, memory_order_release);
+      __sev();
+    }
+  } else {
+    for (uint32_t i = 0; i < blockSize; i++) {
+      while (atomic_load_explicit(&curr_processing_idx, memory_order_acquire) == i) {
+        __wfe();
+      }
+      // feedback = a[multicore_order_split_index]*y[n-(multicore_split_index-1)] + ... + a[order-1]*y[n-order]
+      arm_dot_prod_f32_inline(&history_buffer[i], &coeffs[multicore_order_split_index],
+                              LPC_ORDER - multicore_order_split_index, &feedback);
+      // y[n] = x[n] - (a_1*y[n-1] + a_2*y[n-2] + ... + a_order*y[n-order])
+      dst[i] = history_buffer[order + i] = src[i] - feedback - history_buffer[order + i];
+    }
+
+    // Move the last order samples to the start of the history_buffer in a newest first manner to prepare for the next
+    // function call
+    for (uint32_t i = 0; i < order; i++) {
+      history_buffer[i] = history_buffer[blockSize - i - 1];
+    }
+
+    // Reset the processing index to prepare for the next invocation
+    atomic_store_explicit(&curr_processing_idx, 0, memory_order_release);
   }
+}
 
-  // Move the last order samples to the start of the history_buffer in a newest first manner to prepare for the next
-  // function call
-  for (uint32_t i = 0; i < order; i++) {
-    history_buffer[i] = history_buffer[blockSize - i - 1];
+void launch_core1() {
+  uint32_t trigger;
+  int32_t result = 0;
+  while (1) {
+    if (!queue_is_empty(&autocorrelation_queue)) {
+      autocorr_job_t job;
+      queue_remove_blocking(&autocorrelation_queue, &job);
+      autocorrelate(input_grain_buffer, GRAIN_LEN_SAMPLES, autocorrelation_vector, job.start_delay, job.end_delay);
+      queue_add_blocking(&results_queue, &result);
+    } else if (!queue_is_empty(&fir_lpc_queue)) {
+      queue_remove_blocking(&fir_lpc_queue, &trigger);
+      arm_fir_f32(&fir_lpc_analysis_instance_core1, &input_grain_buffer[FIR_MULTICORE_SPLIT_INDEX],
+                  &lpc_excitation[FIR_MULTICORE_SPLIT_INDEX], GRAIN_LEN_SAMPLES - FIR_MULTICORE_SPLIT_INDEX);
+      queue_add_blocking(&results_queue, &result);
+    } else if (!queue_is_empty(&iir_lpc_queue)) {
+      queue_remove_blocking(&iir_lpc_queue, &trigger);
+      iir_lpc_synthesis_parallel(temp_grain_buffer, lpc_excitation, fir_lpc_analysis_coeffs, iir_lpc_synthesis_state,
+                                 LPC_ORDER, LPC_ORDER / 2, GRAIN_LEN_SAMPLES);
+      queue_add_blocking(&results_queue, &result);
+    }
   }
 }
 
@@ -235,7 +266,7 @@ void audio_proc_init() {
 
   // Create trapezoidal taper window
   uint32_t single_edge_overlap_len = GRAIN_LEN_SAMPLES - STRIDE_SAMPLES - 1;
-  for (int i = 0; i < GRAIN_LEN_SAMPLES; i++) {
+  for (uint32_t i = 0; i < GRAIN_LEN_SAMPLES; i++) {
     if (i < single_edge_overlap_len) {
       taper_window[i] = (float)i / single_edge_overlap_len;
     } else if (i >= GRAIN_LEN_SAMPLES - single_edge_overlap_len) {
@@ -246,7 +277,7 @@ void audio_proc_init() {
   }
 
   // Precompute interpolation indices and amplitudes
-  for (int i = 0; i < GRAIN_LEN_SAMPLES; i++) {
+  for (uint32_t i = 0; i < GRAIN_LEN_SAMPLES; i++) {
     float32_t interp_index = (float32_t)i * PITCH_SHIFT_FACTOR;
     interpolation_indices[i] = (uint16_t)interp_index;
     interpolation_amps[i] = interp_index - interpolation_indices[i];
@@ -270,6 +301,7 @@ void audio_proc_init() {
   // Setup queues to send tasks to core 1
   queue_init(&autocorrelation_queue, sizeof(autocorr_job_t), 2);
   queue_init(&fir_lpc_queue, sizeof(uint32_t), 2);
+  queue_init(&iir_lpc_queue, sizeof(uint32_t), 2);
   queue_init(&results_queue, sizeof(int32_t), 2);
 
   multicore_launch_core1(launch_core1);
@@ -291,7 +323,6 @@ void audio_process() {
   // Two buffers are needed because CMSIS-DSP filter functions are not inplace
   static float32_t processing_buf1[AUDIO_PACKET_SAMPLES];
   static float32_t processing_buf2[AUDIO_PACKET_SAMPLES];
-  static float32_t temp_grain_buffer[GRAIN_LEN_SAMPLES];
 
   int16_t *audio_buf = (int16_t *)rb_get_read_buffer(&g_i2s_to_proc_buffer);
   int16_t *usb_buf = (int16_t *)rb_get_write_buffer(&g_proc_to_usb_buffer);
@@ -333,7 +364,7 @@ void audio_process() {
            (FIR_CORE0_NUM_TAPS - 1) * sizeof(float32_t));
 
     // Resample the grain
-    for (int i = 0; i < GRAIN_LEN_SAMPLES; i++) {
+    for (uint32_t i = 0; i < GRAIN_LEN_SAMPLES; i++) {
       const uint16_t interp_idx = interpolation_indices[i];
       const float32_t interp_amp = interpolation_amps[i];
       const float32_t x0 = lpc_excitation[interp_idx];
@@ -342,8 +373,10 @@ void audio_process() {
     }
 
     // reverse filter the resampled and filtered grain
-    iir_lpc_synthesis(temp_grain_buffer, lpc_excitation, fir_lpc_analysis_coeffs, iir_lpc_synthesis_state, LPC_ORDER,
-                      GRAIN_LEN_SAMPLES);
+    queue_add_blocking(&iir_lpc_queue, &trigger);
+    iir_lpc_synthesis_parallel(temp_grain_buffer, lpc_excitation, fir_lpc_analysis_coeffs, iir_lpc_synthesis_state,
+                               LPC_ORDER, LPC_ORDER / 2, GRAIN_LEN_SAMPLES);
+    queue_remove_blocking(&results_queue, &result);
 
     arm_mult_f32(lpc_excitation, taper_window, lpc_excitation, GRAIN_LEN_SAMPLES);
     arm_add_f32(lpc_excitation, grain_overlap, lpc_excitation, OVERLAP_LEN);
@@ -354,7 +387,7 @@ void audio_process() {
   }
 
   if (size(&output_fifo) >= BLOCK_SIZE) {
-    for (int i = 0; i < BLOCK_SIZE; i++) {
+    for (uint32_t i = 0; i < BLOCK_SIZE; i++) {
       processing_buf2[i] = *((float32_t *)rb_get_read_buffer(&output_fifo));
       rb_increment_read_index(&output_fifo);
     }
@@ -367,7 +400,7 @@ void audio_process() {
     arm_scale_f32(processing_buf2, audio_volume_multiplier * 10, processing_buf2, BLOCK_SIZE);
   }
   arm_clip_f32(processing_buf2, processing_buf2, -1.0f, 1.0f, BLOCK_SIZE);
-  for (int i = 0; i < AUDIO_PACKET_SAMPLES; i++) {
+  for (uint32_t i = 0; i < AUDIO_PACKET_SAMPLES; i++) {
     usb_buf[i] = float_to_pcm16_dither(processing_buf2[i], &rng_state);
   }
   rb_increment_write_index(&g_proc_to_usb_buffer);
